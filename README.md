@@ -27,3 +27,8 @@ Clone the repository and install dependencies:
 git clone https://github.com/USERNAME/LabelTrain.git
 cd LabelTrain
 pip install -r requirements.txt
+
+or
+
+pip install labeltrain
+labeltrain
