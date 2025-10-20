@@ -1,6 +1,4 @@
-tkinter
 opencv-python
 numpy
 Pillow
 PyQt6
-
