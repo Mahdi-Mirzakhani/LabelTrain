@@ -4,8 +4,8 @@ LabelTrain** is a modern, lightweight image annotation tool built for speed, sim
 It provides an intuitive interface for labeling objects in images and exporting annotations in popular formats such as **YOLO**, **Pascal VOC**, **COCO**, and **CSV**.
 
 
-![LabelTrain Interface](images/Capture.JPG)
-![LabelTrain Annotation](images/Capture2.JPG)
+![LabelTrain Interface](image/Capture.JPG)
+![LabelTrain Annotation](image/Capture2.JPG)
 
 ---
 
