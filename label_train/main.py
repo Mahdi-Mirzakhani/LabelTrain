@@ -1322,39 +1322,93 @@ class ImageCanvas(QGraphicsView):
         if 0 <= index < len(self.annotations):
             self.annotation_selected.emit(-1000 - index)  # سیگنال ویژه برای حذف
     def get_resize_handle(self, point: QPointF, ann_index: int) -> Optional[str]:
-        """تشخیص handle برای resize"""
+        """تشخیص handle برای resize با دقت بالاتر"""
         if ann_index < 0 or ann_index >= len(self.annotations):
             return None
         
         ann = self.annotations[ann_index]
         x1, y1, x2, y2 = ann['x1'], ann['y1'], ann['x2'], ann['y2']
         
-        handle_size = 8
+        # افزایش اندازه handle برای سهولت استفاده
+        handle_size = 15
+        corner_priority = 20  # اولویت بیشتر برای گوشه‌ها
         
-        # بررسی گوشه‌ها
-        if abs(point.x() - x1) < handle_size and abs(point.y() - y1) < handle_size:
+        px, py = point.x(), point.y()
+        
+        # محاسبه مرکز لبه‌ها
+        mid_x = (x1 + x2) / 2
+        mid_y = (y1 + y2) / 2
+        
+        # بررسی گوشه‌ها با اولویت بالاتر
+        if abs(px - x1) < corner_priority and abs(py - y1) < corner_priority:
             return 'tl'  # top-left
-        elif abs(point.x() - x2) < handle_size and abs(point.y() - y1) < handle_size:
+        elif abs(px - x2) < corner_priority and abs(py - y1) < corner_priority:
             return 'tr'  # top-right
-        elif abs(point.x() - x1) < handle_size and abs(point.y() - y2) < handle_size:
+        elif abs(px - x1) < corner_priority and abs(py - y2) < corner_priority:
             return 'bl'  # bottom-left
-        elif abs(point.x() - x2) < handle_size and abs(point.y() - y2) < handle_size:
+        elif abs(px - x2) < corner_priority and abs(py - y2) < corner_priority:
             return 'br'  # bottom-right
         
-        # بررسی لبه‌ها
-        elif abs(point.x() - x1) < handle_size and y1 < point.y() < y2:
+        # بررسی لبه‌های وسط
+        elif abs(px - x1) < handle_size and abs(py - mid_y) < handle_size:
             return 'l'  # left
-        elif abs(point.x() - x2) < handle_size and y1 < point.y() < y2:
+        elif abs(px - x2) < handle_size and abs(py - mid_y) < handle_size:
             return 'r'  # right
-        elif abs(point.y() - y1) < handle_size and x1 < point.x() < x2:
+        elif abs(py - y1) < handle_size and abs(px - mid_x) < handle_size:
             return 't'  # top
-        elif abs(point.y() - y2) < handle_size and x1 < point.x() < x2:
+        elif abs(py - y2) < handle_size and abs(px - mid_x) < handle_size:
             return 'b'  # bottom
         
+        # بررسی لبه‌ها (fallback)
+        elif abs(px - x1) < handle_size and y1 < py < y2:
+            return 'l'
+        elif abs(px - x2) < handle_size and y1 < py < y2:
+            return 'r'
+        elif abs(py - y1) < handle_size and x1 < px < x2:
+            return 't'
+        elif abs(py - y2) < handle_size and x1 < px < x2:
+            return 'b'
+        
         return None
-
+    def update_resize_handles(self, ann_index: int):
+        """Update positions of resize handles"""
+        if ann_index < 0 or ann_index >= len(self.annotations):
+            return
+        
+        ann = self.annotations[ann_index]
+        
+        if 'handles' not in ann or len(ann['handles']) != 8:
+            return
+        
+        x1, y1, x2, y2 = ann['x1'], ann['y1'], ann['x2'], ann['y2']
+        handle_size = 10
+        half_size = handle_size / 2
+        
+        # مختصات جدید
+        positions = [
+            (x1, y1),                # tl
+            (x2, y1),                # tr
+            (x1, y2),                # bl
+            (x2, y2),                # br
+            (x1, (y1 + y2) / 2),     # l
+            (x2, (y1 + y2) / 2),     # r
+            ((x1 + x2) / 2, y1),     # t
+            ((x1 + x2) / 2, y2)      # b
+        ]
+        
+        # به‌روزرسانی موقعیت handles
+        for i, (hx, hy) in enumerate(positions):
+            if i < len(ann['handles']):
+                handle = ann['handles'][i]
+                try:
+                    handle.setRect(
+                        hx - half_size, hy - half_size,
+                        handle_size, handle_size
+                    )
+                except RuntimeError:
+                    pass
     def update_annotation_geometry(self, ann_index: int, x1: int, y1: int, x2: int, y2: int):
-        """به‌روزرسانی هندسه annotation"""
+        """به‌روزرسانی هندسه annotation با به‌روزرسانی handles"""
         if 0 <= ann_index < len(self.annotations):
             ann = self.annotations[ann_index]
             
@@ -1371,20 +1425,41 @@ class ImageCanvas(QGraphicsView):
             ann['rect_item'].setRect(rect)
             
             # به‌روزرسانی label
-            ann['label_item'].setPos(x1, y1 - 20)        
+            ann['label_item'].setPos(x1, y1 - 20)
+            
+            # به‌روزرسانی handles اگر این annotation انتخاب شده است
+            if ann_index == self.current_annotation:
+                self.update_resize_handles(ann_index)     
     def remove_annotation(self, index: int):
-        """Remove annotation"""
+        """Remove annotation with handles cleanup"""
         if 0 <= index < len(self.annotations):
             ann = self.annotations[index]
+            
+            # حذف handles
+            if 'handles' in ann:
+                for handle in ann['handles']:
+                    try:
+                        self.scene.removeItem(handle)
+                    except RuntimeError:
+                        pass
+            
+            # حذف rect و label
             self.scene.removeItem(ann['rect_item'])
             self.scene.removeItem(ann['label_item'])
             del self.annotations[index]
             
     def clear_all_annotations(self):
         """Clear all annotations from canvas"""
-        # حذف همه annotations از scene
         for ann in self.annotations:
             try:
+                # حذف handles
+                if 'handles' in ann:
+                    for handle in ann['handles']:
+                        try:
+                            self.scene.removeItem(handle)
+                        except RuntimeError:
+                            pass
+                
                 # حذف مستطیل
                 if 'rect_item' in ann and ann['rect_item'] is not None:
                     self.scene.removeItem(ann['rect_item'])
@@ -1394,13 +1469,12 @@ class ImageCanvas(QGraphicsView):
                     self.scene.removeItem(ann['label_item'])
                     
             except RuntimeError:
-                # Item قبلاً حذف شده
                 pass
             except Exception as e:
                 print(f"❌ Error removing annotation item: {e}")
         
-        # پاک کردن لیست
         self.annotations.clear()
+        self.current_annotation = None
         
         # بازیابی تصویر
         if self.image_pixmap and self.image_item is None:
@@ -1415,26 +1489,84 @@ class ImageCanvas(QGraphicsView):
                 ann['x1'], ann['y1'], ann['x2'], ann['y2'],
                 ann['class'], ann['color']
             )
-            
+                
     def select_annotation(self, index: int):
-        """Select annotation"""
+        """Select annotation with visual resize handles"""
         # Clear previous selection
         if self.current_annotation is not None and self.current_annotation < len(self.annotations):
             old_ann = self.annotations[self.current_annotation]
             if 'rect_item' in old_ann and old_ann['rect_item'] in self.scene.items():
                 old_ann['rect_item'].setPen(QPen(old_ann['color'], 2))
-            
+            # حذف handles قبلی
+            if 'handles' in old_ann:
+                for handle in old_ann['handles']:
+                    try:
+                        self.scene.removeItem(handle)
+                    except RuntimeError:
+                        pass
+                old_ann['handles'] = []
+        
         # New selection
         if 0 <= index < len(self.annotations):
             self.current_annotation = index
             ann = self.annotations[index]
             if 'rect_item' in ann and ann['rect_item'] in self.scene.items():
                 ann['rect_item'].setPen(QPen(self.selected_color, 3))
-            
+                
+                # ایجاد handles
+                self.create_resize_handles(index)
 
-
-
+    def create_resize_handles(self, ann_index: int):
+        """Create visual resize handles around annotation"""
+        if ann_index < 0 or ann_index >= len(self.annotations):
+            return
+        
+        ann = self.annotations[ann_index]
+        x1, y1, x2, y2 = ann['x1'], ann['y1'], ann['x2'], ann['y2']
+        
+        # حذف handles قبلی اگر وجود دارد
+        if 'handles' in ann:
+            for handle in ann['handles']:
+                try:
+                    self.scene.removeItem(handle)
+                except RuntimeError:
+                    pass
+        
+        ann['handles'] = []
+        
+        # اندازه handles
+        handle_size = 10
+        half_size = handle_size / 2
+        
+        # رنگ handles
+        handle_color = QColor("#FFFFFF")
+        handle_border = QColor(self.selected_color)
+        
+        # مختصات 8 handle
+        handle_positions = {
+            'tl': (x1, y1),           # top-left
+            'tr': (x2, y1),           # top-right
+            'bl': (x1, y2),           # bottom-left
+            'br': (x2, y2),           # bottom-right
+            'l': (x1, (y1 + y2) / 2), # left
+            'r': (x2, (y1 + y2) / 2), # right
+            't': ((x1 + x2) / 2, y1), # top
+            'b': ((x1 + x2) / 2, y2)  # bottom
+        }
+        
+        # ایجاد handles
+        for handle_type, (hx, hy) in handle_positions.items():
+            # مربع handle
+            handle_rect = self.scene.addRect(
+                hx - half_size, hy - half_size,
+                handle_size, handle_size,
+                QPen(handle_border, 2),
+                QBrush(handle_color)
+            )
+            handle_rect.setZValue(1000)  # بالای همه چیز
+            ann['handles'].append(handle_rect)
     def mousePressEvent(self, event):
+        """Handle mouse press with improved resize detection"""
         if event.button() == Qt.MouseButton.LeftButton and self.image_item:
             scene_pos = self.mapToScene(event.position().toPoint())
             
@@ -1450,7 +1582,23 @@ class ImageCanvas(QGraphicsView):
                     self.resizing = True
                     self.resize_handle = resize_handle
                     self.resize_annotation_index = clicked_annotation
-                    self.start_point = scene_pos
+                    
+                    # بولد کردن
+                    ann = self.annotations[clicked_annotation]
+                    ann['rect_item'].setPen(QPen(self.selected_color, 4))
+                    
+                    # تغییر شکل cursor بر اساس handle
+                    cursor_map = {
+                        'tl': Qt.CursorShape.SizeFDiagCursor,
+                        'tr': Qt.CursorShape.SizeBDiagCursor,
+                        'bl': Qt.CursorShape.SizeBDiagCursor,
+                        'br': Qt.CursorShape.SizeFDiagCursor,
+                        'l': Qt.CursorShape.SizeHorCursor,
+                        'r': Qt.CursorShape.SizeHorCursor,
+                        't': Qt.CursorShape.SizeVerCursor,
+                        'b': Qt.CursorShape.SizeVerCursor
+                    }
+                    self.setCursor(cursor_map.get(resize_handle, Qt.CursorShape.ArrowCursor))
                     return
                 else:
                     # انتخاب annotation
@@ -1466,57 +1614,62 @@ class ImageCanvas(QGraphicsView):
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
-        """Handle mouse move with bounds checking"""
+        """Handle mouse move with bounds checking and improved resize"""
         scene_pos = self.mapToScene(event.position().toPoint())
         
         # حالت resize
         if self.resizing and self.resize_annotation_index is not None:
             if self.resize_annotation_index >= len(self.annotations):
                 self.resizing = False
-                self.resize_annotation_index = None  # ✅ اضافه شد
-                self.resize_handle = None  # ✅ اضافه شد
+                self.resize_annotation_index = None
+                self.resize_handle = None
                 return
             
             ann = self.annotations[self.resize_annotation_index]
             x1, y1, x2, y2 = ann['x1'], ann['y1'], ann['x2'], ann['y2']
             
-            dx = scene_pos.x() - self.start_point.x()
-            dy = scene_pos.y() - self.start_point.y()
-            
-            # اعمال تغییرات بر اساس handle
-            if self.resize_handle == 'tl':
-                x1 += dx
-                y1 += dy
-            elif self.resize_handle == 'tr':
-                x2 += dx
-                y1 += dy
-            elif self.resize_handle == 'bl':
-                x1 += dx
-                y2 += dy
-            elif self.resize_handle == 'br':
-                x2 += dx
-                y2 += dy
-            elif self.resize_handle == 'l':
-                x1 += dx
-            elif self.resize_handle == 'r':
-                x2 += dx
-            elif self.resize_handle == 't':
-                y1 += dy
-            elif self.resize_handle == 'b':
-                y2 += dy
+            # مختصات جدید موس
+            new_x = scene_pos.x()
+            new_y = scene_pos.y()
             
             # محدود کردن به bounds تصویر
             if self.image_pixmap:
                 img_width = self.image_pixmap.width()
                 img_height = self.image_pixmap.height()
-                
-                x1 = max(0, min(x1, img_width))
-                y1 = max(0, min(y1, img_height))
-                x2 = max(0, min(x2, img_width))
-                y2 = max(0, min(y2, img_height))
+                new_x = max(0, min(new_x, img_width))
+                new_y = max(0, min(new_y, img_height))
             
-            # اطمینان از حداقل اندازه (10 پیکسل)
-            if abs(x2 - x1) < 10 or abs(y2 - y1) < 10:
+            # اعمال تغییرات بر اساس handle - بدون استفاده از delta
+            if self.resize_handle == 'tl':
+                x1 = new_x
+                y1 = new_y
+            elif self.resize_handle == 'tr':
+                x2 = new_x
+                y1 = new_y
+            elif self.resize_handle == 'bl':
+                x1 = new_x
+                y2 = new_y
+            elif self.resize_handle == 'br':
+                x2 = new_x
+                y2 = new_y
+            elif self.resize_handle == 'l':
+                x1 = new_x
+            elif self.resize_handle == 'r':
+                x2 = new_x
+            elif self.resize_handle == 't':
+                y1 = new_y
+            elif self.resize_handle == 'b':
+                y2 = new_y
+            
+            # اطمینان از صحت ترتیب مختصات
+            if x1 > x2:
+                x1, x2 = x2, x1
+            if y1 > y2:
+                y1, y2 = y2, y1
+            
+            # حداقل اندازه
+            min_size = 10
+            if abs(x2 - x1) < min_size or abs(y2 - y1) < min_size:
                 return
             
             # به‌روزرسانی
@@ -1524,7 +1677,11 @@ class ImageCanvas(QGraphicsView):
                 self.resize_annotation_index,
                 int(x1), int(y1), int(x2), int(y2)
             )
-            self.start_point = scene_pos
+            
+            # بولد کردن annotation در حین resize
+            ann = self.annotations[self.resize_annotation_index]
+            ann['rect_item'].setPen(QPen(self.selected_color, 4))  # ضخامت بیشتر
+            
             return
         
         # حالت drawing
@@ -1534,7 +1691,6 @@ class ImageCanvas(QGraphicsView):
                 try:
                     self.scene.removeItem(self.current_rect)
                 except RuntimeError:
-                    # Item قبلاً حذف شده
                     pass
                 self.current_rect = None
             
@@ -1563,12 +1719,19 @@ class ImageCanvas(QGraphicsView):
         """Handle mouse release"""
         # پایان resize
         if self.resizing:
-            saved_index = self.resize_annotation_index  # ✅ ذخیره قبل از reset
+            saved_index = self.resize_annotation_index
+            
+            # برگرداندن ضخامت عادی
+            if saved_index is not None and 0 <= saved_index < len(self.annotations):
+                ann = self.annotations[saved_index]
+                ann['rect_item'].setPen(QPen(self.selected_color, 3))
             
             self.resizing = False
             self.resize_handle = None
-            self.start_point = None
             self.resize_annotation_index = None
+            
+            # برگرداندن cursor عادی
+            self.setCursor(Qt.CursorShape.ArrowCursor)
             
             # ارسال سیگنال برای ذخیره
             if saved_index is not None and 0 <= saved_index < len(self.annotations):
