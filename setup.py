@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="labeltrain",
-    version="4.0.4",
+    version="4.0.5",
     author="Mahdi Mirzakhani",
     author_email="mr79mahdi@gmail.com",
     description="Advanced Image Labeling Tool",
@@ -13,6 +13,8 @@ setup(
     long_description_content_type="text/markdown",
     url="https://github.com/yourusername/labeltrain",
     packages=find_packages(),
+    include_package_data=True,
+
     classifiers=[
         "Development Status :: 4 - Beta",
         "Intended Audience :: Developers",
