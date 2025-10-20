@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="labeltrain",
-    version="4.0.5",
+    version="4.0.6",
     author="Mahdi Mirzakhani",
     author_email="mr79mahdi@gmail.com",
     description="Advanced Image Labeling Tool",

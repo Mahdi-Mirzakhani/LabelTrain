@@ -21,6 +21,7 @@ sdist/
 var/
 wheels/
 web/
+labeltrain.egg-info/
 share/python-wheels/
 *.egg-info/
 .installed.cfg

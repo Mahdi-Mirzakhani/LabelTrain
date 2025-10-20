@@ -4061,7 +4061,7 @@ class AdvancedImageLabeler(QMainWindow):
         
         msg_box.setText(f"""
             <h2 style='color: {theme['primary']}'>Advanced Image Labeling Tool</h2>
-            <p style='color: {text_color}'><b>Version:</b> 4.0.5</p>
+            <p style='color: {text_color}'><b>Version:</b> 4.0.6</p>
             <p style='color: {text_color}'><b>Author:</b> Mahdi Mirzakhani</p>
             <p style='color: {text_color}'><b>Email:</b> mr79mahdi@gmail.com</p>
 
