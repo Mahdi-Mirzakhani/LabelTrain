@@ -1,492 +1,1548 @@
-import tkinter as tk
-from tkinter import ttk, filedialog, messagebox, simpledialog
-import cv2
-import numpy as np
-from PIL import Image, ImageTk, ImageDraw
-import json
+import sys
 import os
-from pathlib import Path
+import json
+import csv
 import xml.etree.ElementTree as ET
 from xml.dom import minidom
-import csv
+from pathlib import Path
+from typing import List, Dict, Optional, Tuple
+import cv2
+import numpy as np
+from PIL import Image
 
-class ImageLabeler:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("Advanced Image Labeling Tool")
-        self.root.geometry("1400x900")
-        self.root.configure(bg='#f0f0f0')
+from PyQt6.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
+    QGridLayout, QLabel, QListWidget, QListWidgetItem, QPushButton, 
+    QComboBox, QSpinBox, QSlider, QGroupBox, QFrame, QSplitter,
+    QFileDialog, QMessageBox, QInputDialog, QDialog, QLineEdit,
+    QTextEdit, QTabWidget, QProgressBar, QToolBar, QStatusBar,
+    QScrollArea, QCheckBox, QRadioButton, QButtonGroup, QSpacerItem,
+    QSizePolicy, QGraphicsView, QGraphicsScene, QGraphicsPixmapItem,
+    QGraphicsRectItem, QMenu, QColorDialog,
+    QFontDialog, QTableWidget, QTableWidgetItem, QHeaderView
+)
+from PyQt6.QtCore import (
+    Qt, QRectF, QPointF, QSizeF, pyqtSignal, QThread, QTimer,
+    QPropertyAnimation, QEasingCurve, QAbstractAnimation, QSettings
+)
+from PyQt6.QtGui import (
+    QPixmap, QColor, QPen, QBrush, QPainter, QFont, QIcon,
+    QLinearGradient, QRadialGradient, QConicalGradient, QPalette,
+    QKeySequence, QCursor, QMovie, QFontMetrics, QAction
+)
+
+
+class ModernStyle:
+    """مدرن ترین استایل‌های UI"""
+    
+    # رنگ‌های اصلی
+    PRIMARY_COLOR = "#2196F3"
+    SECONDARY_COLOR = "#FFC107"
+    SUCCESS_COLOR = "#4CAF50"
+    WARNING_COLOR = "#FF9800"
+    ERROR_COLOR = "#F44336"
+    INFO_COLOR = "#00BCD4"
+    
+    # رنگ‌های پس‌زمینه
+    DARK_BG = "#121212"
+    LIGHT_BG = "#FAFAFA"
+    CARD_BG = "#FFFFFF"
+    SURFACE_BG = "#F5F5F5"
+    
+    # رنگ‌های متن
+    TEXT_PRIMARY = "#212121"
+    TEXT_SECONDARY = "#757575"
+    TEXT_DISABLED = "#BDBDBD"
+    TEXT_HINT = "#9E9E9E"
+    
+    @staticmethod
+    def get_main_stylesheet():
+        return """
+        QMainWindow {
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                stop:0 #f0f2f5, stop:1 #e8eef5);
+            font-family: 'Segoe UI', Arial, sans-serif;
+        }
         
-        # Initialize variables
-        self.current_image = None
-        self.original_image = None
-        self.image_files = []
-        self.current_index = 0
+        QWidget {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            font-size: 9pt;
+        }
+        
+        /* گروه‌ها */
+        QGroupBox {
+            font-weight: bold;
+            border: 2px solid #e0e0e0;
+            border-radius: 12px;
+            margin-top: 1ex;
+            padding-top: 15px;
+            background: white;
+        }
+        
+        QGroupBox::title {
+            subcontrol-origin: margin;
+            left: 15px;
+            padding: 0 8px 0 8px;
+            color: #2196F3;
+            font-size: 10pt;
+        }
+        
+        /* دکمه‌ها */
+        QPushButton {
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                stop:0 #2196F3, stop:1 #1976D2);
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-weight: bold;
+            padding: 10px 20px;
+            min-height: 20px;
+        }
+        
+        QPushButton:hover {
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                stop:0 #42A5F5, stop:1 #2196F3);
+        }
+        
+        QPushButton:pressed {
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                stop:0 #1976D2, stop:1 #1565C0);
+        }
+        
+        QPushButton:disabled {
+            background: #BDBDBD;
+            color: #757575;
+        }
+        
+        /* دکمه‌های خطرناک */
+        QPushButton[danger="true"] {
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                stop:0 #F44336, stop:1 #D32F2F);
+        }
+        
+        QPushButton[danger="true"]:hover {
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                stop:0 #EF5350, stop:1 #F44336);
+        }
+        
+        /* دکمه‌های موفقیت */
+        QPushButton[success="true"] {
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                stop:0 #4CAF50, stop:1 #388E3C);
+        }
+        
+        QPushButton[success="true"]:hover {
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                stop:0 #66BB6A, stop:1 #4CAF50);
+        }
+        
+        /* کمبوباکس‌ها */
+        QComboBox {
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 8px;
+            background: white;
+            min-width: 120px;
+        }
+        
+        QComboBox:focus {
+            border-color: #2196F3;
+        }
+        
+        QComboBox::drop-down {
+            border: none;
+            width: 30px;
+        }
+        
+        /* لیست‌ها */
+        QListWidget {
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            background: white;
+            alternate-background-color: #f5f5f5;
+            outline: none;
+        }
+        
+        QListWidget::item {
+            padding: 8px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        
+        QListWidget::item:selected {
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                stop:0 #2196F3, stop:1 #42A5F5);
+            color: white;
+            border-radius: 4px;
+        }
+        
+        QListWidget::item:hover {
+            background: #e3f2fd;
+            border-radius: 4px;
+        }
+        
+        /* نوار ابزار */
+        QToolBar {
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                stop:0 #ffffff, stop:1 #f5f5f5);
+            border: none;
+            border-bottom: 1px solid #e0e0e0;
+            padding: 5px;
+        }
+        
+        QToolBar QToolButton {
+            background: transparent;
+            border: none;
+            border-radius: 6px;
+            padding: 8px;
+            margin: 2px;
+        }
+        
+        QToolBar QToolButton:hover {
+            background: #e3f2fd;
+        }
+        
+        QToolBar QToolButton:pressed {
+            background: #bbdefb;
+        }
+        
+        /* نوار وضعیت */
+        QStatusBar {
+            background: #f5f5f5;
+            border-top: 1px solid #e0e0e0;
+            color: #666;
+        }
+        
+        /* اسکرولبار */
+        QScrollBar:vertical {
+            border: none;
+            background: #f5f5f5;
+            width: 12px;
+            border-radius: 6px;
+        }
+        
+        QScrollBar::handle:vertical {
+            background: #bdbdbd;
+            border-radius: 6px;
+            min-height: 20px;
+        }
+        
+        QScrollBar::handle:vertical:hover {
+            background: #9e9e9e;
+        }
+        
+        /* تب‌ها */
+        QTabWidget::pane {
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            background: white;
+        }
+        
+        QTabBar::tab {
+            background: #f5f5f5;
+            border: 1px solid #e0e0e0;
+            padding: 10px 20px;
+            margin-right: 2px;
+        }
+        
+        QTabBar::tab:selected {
+            background: white;
+            border-bottom-color: white;
+        }
+        
+        QTabBar::tab:first {
+            border-top-left-radius: 8px;
+            border-bottom-left-radius: 8px;
+        }
+        
+        QTabBar::tab:last {
+            border-top-right-radius: 8px;
+            border-bottom-right-radius: 8px;
+        }
+        """
+
+class AnimatedButton(QPushButton):
+    """دکمه با انیمیشن"""
+    
+    def __init__(self, text="", parent=None):
+        super().__init__(text, parent)
+        self.animation = QPropertyAnimation(self, b"geometry")
+        self.animation.setDuration(150)
+        self.animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+        
+    def enterEvent(self, event):
+        self.start_hover_animation()
+        super().enterEvent(event)
+        
+    def leaveEvent(self, event):
+        self.end_hover_animation()
+        super().leaveEvent(event)
+        
+    def start_hover_animation(self):
+        rect = self.geometry()
+        self.animation.setStartValue(rect)
+        new_rect = rect.adjusted(-2, -2, 2, 2)
+        self.animation.setEndValue(new_rect)
+        self.animation.start()
+        
+    def end_hover_animation(self):
+        rect = self.geometry()
+        self.animation.setStartValue(rect)
+        new_rect = rect.adjusted(2, 2, -2, -2)
+        self.animation.setEndValue(new_rect)
+        self.animation.start()
+
+
+class ImageCanvas(QGraphicsView):
+    """کانواس پیشرفته برای نمایش و ویرایش تصاویر"""
+    
+    annotation_created = pyqtSignal(dict)
+    annotation_selected = pyqtSignal(int)
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        
+        self.scene = QGraphicsScene()
+        self.setScene(self.scene)
+        
+        # تنظیمات
+        self.setRenderHint(QPainter.RenderHint.Antialiasing)
+        self.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        
+        # متغیرها
+        self.image_item = None
+        self.image_pixmap = None  # اضافه شد برای نگهداری pixmap
         self.annotations = []
         self.current_annotation = None
         self.drawing = False
-        self.start_x = 0
-        self.start_y = 0
-        self.scale_factor = 1.0
-        self.canvas_width = 800
-        self.canvas_height = 600
-        self.annotation_format = "YOLO"  # Default format
-        self.class_names = ["person", "car", "bike", "truck", "bus"]  # Default classes
+        self.start_point = None
+        self.current_rect = None
+        self.annotation_color = QColor("#FF5722")
+        self.selected_color = QColor("#2196F3")
+        
+    def set_image(self, image_path: str):
+        """تنظیم تصویر جدید"""
+        try:
+            pixmap = QPixmap(image_path)
+            if pixmap.isNull():
+                print(f"نمی‌توان تصویر را بارگذاری کرد: {image_path}")
+                return False
+                
+            self.scene.clear()
+            self.image_pixmap = pixmap  # ذخیره pixmap
+            self.image_item = self.scene.addPixmap(pixmap)
+            self.annotations.clear()
+            
+            # تنظیم اندازه صحنه
+            self.scene.setSceneRect(QRectF(pixmap.rect()))
+            self.fitInView(self.image_item, Qt.AspectRatioMode.KeepAspectRatio)
+            
+            return True
+        except Exception as e:
+            print(f"خطا در بارگذاری تصویر: {e}")
+            return False
+            
+    def add_annotation(self, x1: int, y1: int, x2: int, y2: int, 
+                      class_name: str, color: QColor = None):
+        """افزودن حاشیه‌نویسی جدید"""
+        if color is None:
+            color = self.annotation_color
+            
+        rect = QRectF(x1, y1, x2 - x1, y2 - y1)
+        
+        # ایجاد مستطیل
+        rect_item = self.scene.addRect(rect, QPen(color, 2), QBrush())
+        
+        # افزودن برچسب
+        label_item = self.scene.addText(class_name, QFont("Arial", 10))
+        label_item.setDefaultTextColor(color)
+        label_item.setPos(x1, y1 - 20)
+        
+        annotation = {
+            'rect_item': rect_item,
+            'label_item': label_item,
+            'class': class_name,
+            'x1': x1, 'y1': y1, 'x2': x2, 'y2': y2,
+            'color': color
+        }
+        
+        self.annotations.append(annotation)
+        return len(self.annotations) - 1
+        
+    def remove_annotation(self, index: int):
+        """حذف حاشیه‌نویسی"""
+        if 0 <= index < len(self.annotations):
+            ann = self.annotations[index]
+            self.scene.removeItem(ann['rect_item'])
+            self.scene.removeItem(ann['label_item'])
+            del self.annotations[index]
+            
+    def clear_all_annotations(self):
+        """پاک کردن همه حاشیه‌نویسی‌ها از کانواس"""
+        for ann in self.annotations:
+            if ann['rect_item'] in self.scene.items():
+                self.scene.removeItem(ann['rect_item'])
+            if ann['label_item'] in self.scene.items():
+                self.scene.removeItem(ann['label_item'])
+        self.annotations.clear()
+        
+        # بازیابی تصویر
+        if self.image_pixmap and self.image_item:
+            self.scene.clear()
+            self.image_item = self.scene.addPixmap(self.image_pixmap)
+            
+    def redraw_all_annotations(self, annotations_list):
+        """بازرسم همه حاشیه‌نویسی‌ها"""
+        self.clear_all_annotations()
+        
+        for ann in annotations_list:
+            self.add_annotation(
+                ann['x1'], ann['y1'], ann['x2'], ann['y2'],
+                ann['class'], ann['color']
+            )
+            
+    def select_annotation(self, index: int):
+        """انتخاب حاشیه‌نویسی"""
+        # پاک کردن انتخاب قبلی
+        if self.current_annotation is not None and self.current_annotation < len(self.annotations):
+            old_ann = self.annotations[self.current_annotation]
+            if 'rect_item' in old_ann and old_ann['rect_item'] in self.scene.items():
+                old_ann['rect_item'].setPen(QPen(old_ann['color'], 2))
+            
+        # انتخاب جدید
+        if 0 <= index < len(self.annotations):
+            self.current_annotation = index
+            ann = self.annotations[index]
+            if 'rect_item' in ann and ann['rect_item'] in self.scene.items():
+                ann['rect_item'].setPen(QPen(self.selected_color, 3))
+            
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton and self.image_item:
+            scene_pos = self.mapToScene(event.position().toPoint())
+            
+            # بررسی کلیک روی حاشیه‌نویسی موجود
+            clicked_annotation = self.get_annotation_at_point(scene_pos)
+            if clicked_annotation is not None:
+                self.select_annotation(clicked_annotation)
+                self.annotation_selected.emit(clicked_annotation)
+                return
+                
+            # شروع رسم حاشیه‌نویسی جدید
+            if self.scene.sceneRect().contains(scene_pos):
+                self.drawing = True
+                self.start_point = scene_pos
+                
+        super().mousePressEvent(event)
+        
+    def mouseMoveEvent(self, event):
+        if self.drawing and self.start_point:
+            scene_pos = self.mapToScene(event.position().toPoint())
+            
+            # حذف مستطیل موقت قبلی
+            if self.current_rect:
+                self.scene.removeItem(self.current_rect)
+                
+            # رسم مستطیل موقت جدید
+            rect = QRectF(self.start_point, scene_pos).normalized()
+            self.current_rect = self.scene.addRect(
+                rect, QPen(QColor("#FF5722"), 2, Qt.PenStyle.DashLine), QBrush()
+            )
+            
+        super().mouseMoveEvent(event)
+        
+    def mouseReleaseEvent(self, event):
+        if self.drawing and self.start_point:
+            scene_pos = self.mapToScene(event.position().toPoint())
+            
+            # حذف مستطیل موقت
+            if self.current_rect:
+                self.scene.removeItem(self.current_rect)
+                self.current_rect = None
+                
+            # بررسی اندازه مناسب
+            rect = QRectF(self.start_point, scene_pos).normalized()
+            if rect.width() > 10 and rect.height() > 10:
+                annotation_data = {
+                    'x1': int(rect.x()),
+                    'y1': int(rect.y()),
+                    'x2': int(rect.x() + rect.width()),
+                    'y2': int(rect.y() + rect.height()),
+                    'class': 'object'  # کلاس پیش‌فرض
+                }
+                self.annotation_created.emit(annotation_data)
+                
+            self.drawing = False
+            self.start_point = None
+            
+        super().mouseReleaseEvent(event)
+        
+    def get_annotation_at_point(self, point: QPointF) -> Optional[int]:
+        """پیدا کردن حاشیه‌نویسی در نقطه مشخص"""
+        for i, ann in enumerate(self.annotations):
+            rect = QRectF(ann['x1'], ann['y1'], 
+                         ann['x2'] - ann['x1'], ann['y2'] - ann['y1'])
+            if rect.contains(point):
+                return i
+        return None
+        
+    def zoom_in(self):
+        """بزرگ‌نمایی"""
+        self.scale(1.25, 1.25)
+        
+    def zoom_out(self):
+        """کوچک‌نمایی"""
+        self.scale(0.8, 0.8)
+        
+    def fit_to_window(self):
+        """تطبیق با پنجره"""
+        if self.image_item:
+            self.fitInView(self.image_item, Qt.AspectRatioMode.KeepAspectRatio)
+
+
+class AnnotationListWidget(QListWidget):
+    """لیست پیشرفته حاشیه‌نویسی‌ها"""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAlternatingRowColors(True)
+        self.setStyleSheet("""
+            QListWidget::item {
+                padding: 12px;
+                border-bottom: 1px solid #e0e0e0;
+                border-radius: 4px;
+                margin: 2px;
+            }
+            QListWidget::item:selected {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #2196F3, stop:1 #42A5F5);
+                color: white;
+            }
+            QListWidget::item:hover {
+                background: #e3f2fd;
+            }
+        """)
+        
+    def add_annotation_item(self, annotation: dict, index: int):
+        """افزودن آیتم حاشیه‌نویسی"""
+        text = f"{annotation['class']}\n({annotation['x1']}, {annotation['y1']}) → ({annotation['x2']}, {annotation['y2']})"
+        item = QListWidgetItem(text)
+        item.setData(Qt.ItemDataRole.UserRole, index)
+        
+        # تنظیم آیکون رنگی
+        pixmap = QPixmap(16, 16)
+        pixmap.fill(annotation.get('color', QColor("#FF5722")))
+        item.setIcon(QIcon(pixmap))
+        
+        self.addItem(item)
+
+
+class ClassManagerDialog(QDialog):
+    """دیالوگ مدیریت کلاس‌ها"""
+    
+    def __init__(self, parent=None, classes=None):
+        super().__init__(parent)
+        self.classes = classes[:] if classes else []  # کپی لیست
+        self.setup_ui()
+        
+    def setup_ui(self):
+        self.setWindowTitle("مدیریت کلاس‌ها")
+        self.setModal(True)
+        self.resize(500, 600)
+        
+        # استایل
+        self.setStyleSheet(ModernStyle.get_main_stylesheet())
+        
+        layout = QVBoxLayout(self)
+        
+        # عنوان
+        title = QLabel("مدیریت کلاس‌های اشیاء")
+        title.setFont(QFont("Arial", 16, QFont.Weight.Bold))
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title.setStyleSheet("color: #2196F3; padding: 20px;")
+        layout.addWidget(title)
+        
+        # لیست کلاس‌ها
+        group = QGroupBox("کلاس‌های موجود")
+        group_layout = QVBoxLayout(group)
+        
+        self.class_list = QListWidget()
+        self.class_list.setStyleSheet("""
+            QListWidget::item {
+                padding: 10px;
+                border-bottom: 1px solid #e0e0e0;
+            }
+        """)
+        for cls in self.classes:
+            self.class_list.addItem(cls)
+        group_layout.addWidget(self.class_list)
+        
+        # دکمه‌های مدیریت
+        buttons_layout = QHBoxLayout()
+        
+        up_btn = QPushButton("↑ بالا")
+        up_btn.clicked.connect(self.move_up)
+        buttons_layout.addWidget(up_btn)
+        
+        down_btn = QPushButton("↓ پایین")
+        down_btn.clicked.connect(self.move_down)
+        buttons_layout.addWidget(down_btn)
+        
+        remove_btn = QPushButton("حذف")
+        remove_btn.setProperty("danger", True)
+        remove_btn.clicked.connect(self.remove_class)
+        buttons_layout.addWidget(remove_btn)
+        
+        group_layout.addLayout(buttons_layout)
+        layout.addWidget(group)
+        
+        # افزودن کلاس جدید
+        add_group = QGroupBox("افزودن کلاس جدید")
+        add_layout = QHBoxLayout(add_group)
+        
+        self.class_input = QLineEdit()
+        self.class_input.setPlaceholderText("نام کلاس را وارد کنید...")
+        self.class_input.returnPressed.connect(self.add_class)
+        add_layout.addWidget(self.class_input)
+        
+        add_btn = QPushButton("افزودن")
+        add_btn.setProperty("success", True)
+        add_btn.clicked.connect(self.add_class)
+        add_layout.addWidget(add_btn)
+        
+        layout.addWidget(add_group)
+        
+        # کلاس‌های پیش‌فرض
+        preset_group = QGroupBox("کلاس‌های پیش‌فرض")
+        preset_layout = QGridLayout(preset_group)
+        
+        presets = [
+            "person", "car", "truck", "bus", "motorcycle", "bicycle",
+            "dog", "cat", "bird", "train", "boat", "airplane"
+        ]
+        
+        for i, preset in enumerate(presets):
+            btn = QPushButton(preset)
+            btn.clicked.connect(lambda checked, p=preset: self.add_preset_class(p))
+            preset_layout.addWidget(btn, i // 3, i % 3)
+            
+        layout.addWidget(preset_group)
+        
+        # دکمه‌های دیالوگ
+        dialog_buttons = QHBoxLayout()
+        
+        ok_btn = QPushButton("تأیید")
+        ok_btn.setProperty("success", True)
+        ok_btn.clicked.connect(self.accept)
+        dialog_buttons.addWidget(ok_btn)
+        
+        cancel_btn = QPushButton("انصراف")
+        cancel_btn.clicked.connect(self.reject)
+        dialog_buttons.addWidget(cancel_btn)
+        
+        layout.addLayout(dialog_buttons)
+        
+    def add_class(self):
+        class_name = self.class_input.text().strip()
+        if class_name and class_name not in self.classes:
+            self.classes.append(class_name)
+            self.class_list.addItem(class_name)
+            self.class_input.clear()
+            
+    def add_preset_class(self, class_name):
+        if class_name not in self.classes:
+            self.classes.append(class_name)
+            self.class_list.addItem(class_name)
+            
+    def remove_class(self):
+        current_row = self.class_list.currentRow()
+        if current_row >= 0:
+            self.class_list.takeItem(current_row)
+            del self.classes[current_row]
+            
+    def move_up(self):
+        current_row = self.class_list.currentRow()
+        if current_row > 0:
+            item = self.class_list.takeItem(current_row)
+            self.class_list.insertItem(current_row - 1, item)
+            self.class_list.setCurrentRow(current_row - 1)
+            
+            # تغییر در لیست
+            self.classes[current_row], self.classes[current_row - 1] = \
+                self.classes[current_row - 1], self.classes[current_row]
+                
+    def move_down(self):
+        current_row = self.class_list.currentRow()
+        if current_row < self.class_list.count() - 1:
+            item = self.class_list.takeItem(current_row)
+            self.class_list.insertItem(current_row + 1, item)
+            self.class_list.setCurrentRow(current_row + 1)
+            
+            # تغییر در لیست
+            self.classes[current_row], self.classes[current_row + 1] = \
+                self.classes[current_row + 1], self.classes[current_row]
+
+
+class AdvancedImageLabeler(QMainWindow):
+    """برنامه اصلی برچسب‌گذاری تصاویر"""
+    
+    def __init__(self):
+        super().__init__()
+        
+        # متغیرهای اصلی
+        self.image_files = []
+        self.current_index = 0
+        self.annotations = []  # حاشیه‌نویسی‌های تصویر جاری
         self.current_class = "person"
+        self.classes = ["person", "car", "bike", "truck", "bus"]
+        self.annotation_format = "YOLO"
         self.output_dir = ""
+        self.settings = QSettings("ImageLabeler", "Advanced")
         
         self.setup_ui()
+        self.setup_connections()
         self.load_settings()
         
     def setup_ui(self):
-        # Create main frames
-        self.create_menu()
+        """راه‌اندازی رابط کاربری"""
+        self.setWindowTitle("Advanced Image Labeling Tool - ابزار پیشرفته برچسب‌گذاری تصاویر")
+        self.setGeometry(100, 100, 1600, 1000)
+        
+        # اعمال استایل
+        self.setStyleSheet(ModernStyle.get_main_stylesheet())
+        
+        # ویجت مرکزی
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+        
+        # طرح‌بندی اصلی
+        main_layout = QHBoxLayout(central_widget)
+        main_layout.setSpacing(10)
+        main_layout.setContentsMargins(10, 10, 10, 10)
+        
+        # تقسیم‌بندی اصلی
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        main_layout.addWidget(splitter)
+        
+        # پنل راست - کانواس تصویر
+        self.create_image_panel(splitter)
+        
+        # پنل چپ - کنترل‌ها
+# پنل چپ - کنترل‌ها
+        self.create_control_panel(splitter)
+        
+        # تنظیم نسبت‌ها
+        splitter.setSizes([1200, 400])
+        
+        # نوار ابزار
         self.create_toolbar()
-        self.create_main_layout()
-        self.create_status_bar()
         
-    def create_menu(self):
-        menubar = tk.Menu(self.root)
-        self.root.config(menu=menubar)
+        # نوار وضعیت
+        self.create_statusbar()
         
-        # File menu
-        file_menu = tk.Menu(menubar, tearoff=0)
-        menubar.add_cascade(label="File", menu=file_menu)
-        file_menu.add_command(label="Open Folder", command=self.open_folder)
-        file_menu.add_command(label="Save Annotations", command=self.save_annotations)
-        file_menu.add_command(label="Export All", command=self.export_all_annotations)
-        file_menu.add_separator()
-        file_menu.add_command(label="Exit", command=self.root.quit)
+        # منو
+        self.create_menubar()
         
-        # Edit menu
-        edit_menu = tk.Menu(menubar, tearoff=0)
-        menubar.add_cascade(label="Edit", menu=edit_menu)
-        edit_menu.add_command(label="Clear All Annotations", command=self.clear_all_annotations)
-        edit_menu.add_command(label="Delete Selected", command=self.delete_selected_annotation)
+    def create_image_panel(self, parent):
+        """ایجاد پنل تصویر"""
+        image_frame = QFrame()
+        image_frame.setFrameStyle(QFrame.Shape.StyledPanel)
+        image_frame.setStyleSheet("""
+            QFrame {
+                background: white;
+                border: 2px solid #e0e0e0;
+                border-radius: 12px;
+            }
+        """)
         
-        # View menu
-        view_menu = tk.Menu(menubar, tearoff=0)
-        menubar.add_cascade(label="View", menu=view_menu)
-        view_menu.add_command(label="Zoom In", command=self.zoom_in)
-        view_menu.add_command(label="Zoom Out", command=self.zoom_out)
-        view_menu.add_command(label="Fit to Window", command=self.fit_to_window)
+        layout = QVBoxLayout(image_frame)
         
-        # Settings menu
-        settings_menu = tk.Menu(menubar, tearoff=0)
-        menubar.add_cascade(label="Settings", menu=settings_menu)
-        settings_menu.add_command(label="Manage Classes", command=self.manage_classes)
-        settings_menu.add_command(label="Set Output Format", command=self.set_output_format)
-        settings_menu.add_command(label="Set Output Directory", command=self.set_output_directory)
+        # عنوان
+        title = QLabel("🖼️ تصویر")
+        title.setFont(QFont("Arial", 12, QFont.Weight.Bold))
+        title.setStyleSheet("color: #2196F3; padding: 10px; border: none;")
+        layout.addWidget(title)
+        
+        # کانواس
+        self.canvas = ImageCanvas()
+        layout.addWidget(self.canvas)
+        
+        # کنترل‌های زوم
+        zoom_layout = QHBoxLayout()
+        
+        zoom_out_btn = QPushButton("🔍-")
+        zoom_out_btn.clicked.connect(self.canvas.zoom_out)
+        zoom_layout.addWidget(zoom_out_btn)
+        
+        fit_btn = QPushButton("📐 تطبیق")
+        fit_btn.clicked.connect(self.canvas.fit_to_window)
+        zoom_layout.addWidget(fit_btn)
+        
+        zoom_in_btn = QPushButton("🔍+")
+        zoom_in_btn.clicked.connect(self.canvas.zoom_in)
+        zoom_layout.addWidget(zoom_in_btn)
+        
+        zoom_layout.addStretch()
+        layout.addLayout(zoom_layout)
+        
+        parent.addWidget(image_frame)
+        
+    def create_control_panel(self, parent):
+        """ایجاد پنل کنترل"""
+        control_frame = QFrame()
+        control_frame.setFrameStyle(QFrame.Shape.StyledPanel)
+        control_frame.setStyleSheet("""
+            QFrame {
+                background: white;
+                border: 2px solid #e0e0e0;
+                border-radius: 12px;
+            }
+        """)
+        
+        layout = QVBoxLayout(control_frame)
+        
+        # تب‌ها
+        tab_widget = QTabWidget()
+        tab_widget.setStyleSheet("""
+            QTabWidget::pane {
+                border: 1px solid #e0e0e0;
+                border-radius: 8px;
+                background: white;
+            }
+            QTabBar::tab {
+                background: #f5f5f5;
+                border: 1px solid #e0e0e0;
+                padding: 12px 20px;
+                margin-right: 2px;
+                font-weight: bold;
+            }
+            QTabBar::tab:selected {
+                background: white;
+                border-bottom-color: white;
+                color: #2196F3;
+            }
+        """)
+        
+        # تب فایل‌ها
+        files_tab = self.create_files_tab()
+        tab_widget.addTab(files_tab, "📁 فایل‌ها")
+        
+        # تب حاشیه‌نویسی‌ها
+        annotations_tab = self.create_annotations_tab()
+        tab_widget.addTab(annotations_tab, "🏷️ برچسب‌ها")
+        
+        # تب تنظیمات
+        settings_tab = self.create_settings_tab()
+        tab_widget.addTab(settings_tab, "⚙️ تنظیمات")
+        
+        layout.addWidget(tab_widget)
+        parent.addWidget(control_frame)
+        
+    def create_files_tab(self):
+        """ایجاد تب فایل‌ها"""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        
+        # دکمه باز کردن پوشه
+        open_btn = AnimatedButton("📂 باز کردن پوشه")
+        open_btn.setProperty("success", True)
+        open_btn.clicked.connect(self.open_folder)
+        layout.addWidget(open_btn)
+        
+        # لیست فایل‌ها
+        files_group = QGroupBox("لیست تصاویر")
+        files_layout = QVBoxLayout(files_group)
+        
+        self.files_list = QListWidget()
+        self.files_list.setStyleSheet("""
+            QListWidget::item {
+                padding: 8px;
+                border-bottom: 1px solid #f0f0f0;
+            }
+            QListWidget::item:selected {
+                background: #2196F3;
+                color: white;
+            }
+        """)
+        files_layout.addWidget(self.files_list)
+        
+        # کنترل‌های ناوبری
+        nav_layout = QHBoxLayout()
+        
+        self.prev_btn = QPushButton("⬅️ قبلی")
+        self.prev_btn.clicked.connect(self.previous_image)
+        nav_layout.addWidget(self.prev_btn)
+        
+        self.next_btn = QPushButton("➡️ بعدی")
+        self.next_btn.clicked.connect(self.next_image)
+        nav_layout.addWidget(self.next_btn)
+        
+        files_layout.addLayout(nav_layout)
+        
+        # شمارنده
+        self.counter_label = QLabel("0 / 0")
+        self.counter_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.counter_label.setStyleSheet("""
+            QLabel {
+                background: #f5f5f5;
+                border: 1px solid #e0e0e0;
+                border-radius: 4px;
+                padding: 8px;
+                font-weight: bold;
+            }
+        """)
+        files_layout.addWidget(self.counter_label)
+        
+        layout.addWidget(files_group)
+        return widget
+        
+    def create_annotations_tab(self):
+        """ایجاد تب حاشیه‌نویسی‌ها"""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        
+        # انتخاب کلاس
+        class_group = QGroupBox("انتخاب کلاس")
+        class_layout = QVBoxLayout(class_group)
+        
+        self.class_combo = QComboBox()
+        self.class_combo.addItems(self.classes)
+        self.class_combo.currentTextChanged.connect(self.on_class_changed)
+        class_layout.addWidget(self.class_combo)
+        
+        # دکمه مدیریت کلاس‌ها
+        manage_classes_btn = QPushButton("📝 مدیریت کلاس‌ها")
+        manage_classes_btn.clicked.connect(self.manage_classes)
+        class_layout.addWidget(manage_classes_btn)
+        
+        layout.addWidget(class_group)
+        
+        # لیست حاشیه‌نویسی‌ها
+        ann_group = QGroupBox("برچسب‌های موجود")
+        ann_layout = QVBoxLayout(ann_group)
+        
+        self.annotations_list = AnnotationListWidget()
+        self.annotations_list.itemClicked.connect(self.on_annotation_selected)
+        ann_layout.addWidget(self.annotations_list)
+        
+        # دکمه‌های مدیریت
+        ann_buttons = QHBoxLayout()
+        
+        delete_btn = QPushButton("🗑️ حذف")
+        delete_btn.setProperty("danger", True)
+        delete_btn.clicked.connect(self.delete_annotation)
+        ann_buttons.addWidget(delete_btn)
+        
+        clear_btn = QPushButton("🧹 پاک کردن همه")
+        clear_btn.setProperty("danger", True)
+        clear_btn.clicked.connect(self.clear_annotations)
+        ann_buttons.addWidget(clear_btn)
+        
+        ann_layout.addLayout(ann_buttons)
+        layout.addWidget(ann_group)
+        
+        return widget
+        
+    def create_settings_tab(self):
+        """ایجاد تب تنظیمات"""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        
+        # فرمت خروجی
+        format_group = QGroupBox("فرمت خروجی")
+        format_layout = QVBoxLayout(format_group)
+        
+        self.format_combo = QComboBox()
+        self.format_combo.addItems(["YOLO", "Pascal VOC", "COCO", "CSV"])
+        self.format_combo.setCurrentText(self.annotation_format)
+        self.format_combo.currentTextChanged.connect(self.on_format_changed)
+        format_layout.addWidget(self.format_combo)
+        
+        layout.addWidget(format_group)
+        
+        # مسیر خروجی
+        output_group = QGroupBox("مسیر خروجی")
+        output_layout = QVBoxLayout(output_group)
+        
+        self.output_label = QLabel("انتخاب نشده")
+        self.output_label.setStyleSheet("""
+            QLabel {
+                background: #f5f5f5;
+                border: 1px solid #e0e0e0;
+                border-radius: 4px;
+                padding: 8px;
+            }
+        """)
+        output_layout.addWidget(self.output_label)
+        
+        output_btn = QPushButton("📁 انتخاب مسیر")
+        output_btn.clicked.connect(self.select_output_dir)
+        output_layout.addWidget(output_btn)
+        
+        layout.addWidget(output_group)
+        
+        # ذخیره و بارگذاری
+        save_group = QGroupBox("ذخیره و بارگذاری")
+        save_layout = QVBoxLayout(save_group)
+        
+        save_btn = QPushButton("💾 ذخیره برچسب‌ها")
+        save_btn.setProperty("success", True)
+        save_btn.clicked.connect(self.save_annotations)
+        save_layout.addWidget(save_btn)
+        
+        export_btn = QPushButton("📤 صادرات همه")
+        export_btn.clicked.connect(self.export_all)
+        save_layout.addWidget(export_btn)
+        
+        layout.addWidget(save_group)
+        
+        layout.addStretch()
+        return widget
         
     def create_toolbar(self):
-        toolbar = ttk.Frame(self.root, relief=tk.RAISED)
-        toolbar.pack(side=tk.TOP, fill=tk.X, padx=5, pady=2)
+        """ایجاد نوار ابزار"""
+        toolbar = QToolBar("نوار ابزار اصلی")
+        toolbar.setMovable(False)
+        self.addToolBar(toolbar)
         
-        # Navigation buttons
-        ttk.Button(toolbar, text="← Previous", command=self.previous_image).pack(side=tk.LEFT, padx=2)
-        ttk.Button(toolbar, text="Next →", command=self.next_image).pack(side=tk.LEFT, padx=2)
+        # دکمه‌های اصلی
+        open_action = QAction("📂", self)
+        open_action.triggered.connect(self.open_folder)
+        open_action.setToolTip("باز کردن پوشه")
+        toolbar.addAction(open_action)
         
-        # Separator
-        ttk.Separator(toolbar, orient='vertical').pack(side=tk.LEFT, fill=tk.Y, padx=10)
+        toolbar.addSeparator()
         
-        # Class selection
-        ttk.Label(toolbar, text="Class:").pack(side=tk.LEFT, padx=2)
-        self.class_var = tk.StringVar(value=self.current_class)
-        self.class_combo = ttk.Combobox(toolbar, textvariable=self.class_var, values=self.class_names, width=15)
-        self.class_combo.pack(side=tk.LEFT, padx=2)
-        self.class_combo.bind('<<ComboboxSelected>>', self.on_class_change)
+        prev_action = QAction("⬅️", self)
+        prev_action.triggered.connect(self.previous_image)
+        prev_action.setToolTip("تصویر قبلی")
+        toolbar.addAction(prev_action)
         
-        # Format selection
-        ttk.Label(toolbar, text="Format:").pack(side=tk.LEFT, padx=(20, 2))
-        self.format_var = tk.StringVar(value=self.annotation_format)
-        format_combo = ttk.Combobox(toolbar, textvariable=self.format_var, 
-                                   values=["YOLO", "Pascal VOC", "COCO", "CSV"], width=10)
-        format_combo.pack(side=tk.LEFT, padx=2)
-        format_combo.bind('<<ComboboxSelected>>', self.on_format_change)
+        next_action = QAction("➡️", self)
+        next_action.triggered.connect(self.next_image)
+        next_action.setToolTip("تصویر بعدی")
+        toolbar.addAction(next_action)
         
-        # Image counter
-        self.image_counter_var = tk.StringVar(value="0 / 0")
-        ttk.Label(toolbar, textvariable=self.image_counter_var).pack(side=tk.RIGHT, padx=10)
+        toolbar.addSeparator()
         
-    def create_main_layout(self):
-        # Main container
-        main_frame = ttk.Frame(self.root)
-        main_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        zoom_in_action = QAction("🔍+", self)
+        zoom_in_action.triggered.connect(self.canvas.zoom_in)
+        zoom_in_action.setToolTip("بزرگ‌نمایی")
+        toolbar.addAction(zoom_in_action)
         
-        # Left panel - Image canvas
-        left_frame = ttk.LabelFrame(main_frame, text="Image", padding=5)
-        left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 5))
+        zoom_out_action = QAction("🔍-", self)
+        zoom_out_action.triggered.connect(self.canvas.zoom_out)
+        zoom_out_action.setToolTip("کوچک‌نمایی")
+        toolbar.addAction(zoom_out_action)
         
-        # Canvas with scrollbars
-        canvas_frame = ttk.Frame(left_frame)
-        canvas_frame.pack(fill=tk.BOTH, expand=True)
+        fit_action = QAction("📐", self)
+        fit_action.triggered.connect(self.canvas.fit_to_window)
+        fit_action.setToolTip("تطبیق با پنجره")
+        toolbar.addAction(fit_action)
         
-        self.canvas = tk.Canvas(canvas_frame, bg='white', width=self.canvas_width, height=self.canvas_height)
-        v_scrollbar = ttk.Scrollbar(canvas_frame, orient=tk.VERTICAL, command=self.canvas.yview)
-        h_scrollbar = ttk.Scrollbar(canvas_frame, orient=tk.HORIZONTAL, command=self.canvas.xview)
-        self.canvas.configure(yscrollcommand=v_scrollbar.set, xscrollcommand=h_scrollbar.set)
+        toolbar.addSeparator()
         
-        v_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        h_scrollbar.pack(side=tk.BOTTOM, fill=tk.X)
-        self.canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        save_action = QAction("💾", self)
+        save_action.triggered.connect(self.save_annotations)
+        save_action.setToolTip("ذخیره")
+        toolbar.addAction(save_action)
         
-        # Bind canvas events
-        self.canvas.bind("<Button-1>", self.on_canvas_click)
-        self.canvas.bind("<B1-Motion>", self.on_canvas_drag)
-        self.canvas.bind("<ButtonRelease-1>", self.on_canvas_release)
-        self.canvas.bind("<Double-Button-1>", self.on_canvas_double_click)
+    def create_statusbar(self):
+        """ایجاد نوار وضعیت"""
+        statusbar = QStatusBar()
+        self.setStatusBar(statusbar)
         
-        # Right panel - Controls and annotations
-        right_frame = ttk.LabelFrame(main_frame, text="Controls", padding=5, width=300)
-        right_frame.pack(side=tk.RIGHT, fill=tk.Y)
-        right_frame.pack_propagate(False)
+        self.status_label = QLabel("آماده - یک پوشه انتخاب کنید")
+        statusbar.addWidget(self.status_label)
         
-        # File list
-        file_frame = ttk.LabelFrame(right_frame, text="Images", padding=5)
-        file_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 5))
+        # پیشرفت
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setVisible(False)
+        statusbar.addPermanentWidget(self.progress_bar)
         
-        # File listbox with scrollbar
-        file_list_frame = ttk.Frame(file_frame)
-        file_list_frame.pack(fill=tk.BOTH, expand=True)
+    def create_menubar(self):
+        """ایجاد نوار منو"""
+        menubar = self.menuBar()
         
-        self.file_listbox = tk.Listbox(file_list_frame, height=8)
-        file_scrollbar = ttk.Scrollbar(file_list_frame, orient=tk.VERTICAL, command=self.file_listbox.yview)
-        self.file_listbox.configure(yscrollcommand=file_scrollbar.set)
-        self.file_listbox.bind('<<ListboxSelect>>', self.on_file_select)
+        # منوی فایل
+        file_menu = menubar.addMenu("📁 فایل")
         
-        file_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        self.file_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        open_action = QAction("باز کردن پوشه", self)
+        open_action.setShortcut(QKeySequence.StandardKey.Open)
+        open_action.triggered.connect(self.open_folder)
+        file_menu.addAction(open_action)
         
-        # Annotations list
-        ann_frame = ttk.LabelFrame(right_frame, text="Annotations", padding=5)
-        ann_frame.pack(fill=tk.BOTH, expand=True)
+        file_menu.addSeparator()
         
-        # Annotations listbox with scrollbar
-        ann_list_frame = ttk.Frame(ann_frame)
-        ann_list_frame.pack(fill=tk.BOTH, expand=True)
+        save_action = QAction("ذخیره", self)
+        save_action.setShortcut(QKeySequence.StandardKey.Save)
+        save_action.triggered.connect(self.save_annotations)
+        file_menu.addAction(save_action)
         
-        self.ann_listbox = tk.Listbox(ann_list_frame, height=10)
-        ann_scrollbar = ttk.Scrollbar(ann_list_frame, orient=tk.VERTICAL, command=self.ann_listbox.yview)
-        self.ann_listbox.configure(yscrollcommand=ann_scrollbar.set)
-        self.ann_listbox.bind('<<ListboxSelect>>', self.on_annotation_select)
+        export_action = QAction("صادرات همه", self)
+        export_action.triggered.connect(self.export_all)
+        file_menu.addAction(export_action)
         
-        ann_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        self.ann_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        file_menu.addSeparator()
         
-        # Annotation buttons
-        btn_frame = ttk.Frame(ann_frame)
-        btn_frame.pack(fill=tk.X, pady=5)
+        quit_action = QAction("خروج", self)
+        quit_action.setShortcut(QKeySequence.StandardKey.Quit)
+        quit_action.triggered.connect(self.close)
+        file_menu.addAction(quit_action)
         
-        ttk.Button(btn_frame, text="Delete", command=self.delete_selected_annotation, width=10).pack(side=tk.LEFT, padx=2)
-        ttk.Button(btn_frame, text="Clear All", command=self.clear_all_annotations, width=10).pack(side=tk.LEFT, padx=2)
+        # منوی ویرایش
+        edit_menu = menubar.addMenu("✏️ ویرایش")
         
-    def create_status_bar(self):
-        self.status_var = tk.StringVar(value="Ready - Open a folder to start labeling")
-        status_bar = ttk.Label(self.root, textvariable=self.status_var, relief=tk.SUNKEN)
-        status_bar.pack(side=tk.BOTTOM, fill=tk.X)
+        delete_action = QAction("حذف انتخاب شده", self)
+        delete_action.setShortcut(QKeySequence.StandardKey.Delete)
+        delete_action.triggered.connect(self.delete_annotation)
+        edit_menu.addAction(delete_action)
+        
+        clear_action = QAction("پاک کردن همه", self)
+        clear_action.triggered.connect(self.clear_annotations)
+        edit_menu.addAction(clear_action)
+        
+        # منوی نمایش
+        view_menu = menubar.addMenu("👁️ نمایش")
+        
+        zoom_in_action = QAction("بزرگ‌نمایی", self)
+        zoom_in_action.setShortcut(QKeySequence("Ctrl++"))
+        zoom_in_action.triggered.connect(self.canvas.zoom_in)
+        view_menu.addAction(zoom_in_action)
+        
+        zoom_out_action = QAction("کوچک‌نمایی", self)
+        zoom_out_action.setShortcut(QKeySequence("Ctrl+-"))
+        zoom_out_action.triggered.connect(self.canvas.zoom_out)
+        view_menu.addAction(zoom_out_action)
+        
+        fit_action = QAction("تطبیق با پنجره", self)
+        fit_action.setShortcut(QKeySequence("Ctrl+0"))
+        fit_action.triggered.connect(self.canvas.fit_to_window)
+        view_menu.addAction(fit_action)
+        
+        # منوی ابزارها
+        tools_menu = menubar.addMenu("🛠️ ابزارها")
+        
+        manage_action = QAction("مدیریت کلاس‌ها", self)
+        manage_action.triggered.connect(self.manage_classes)
+        tools_menu.addAction(manage_action)
+        
+        # منوی راهنما
+        help_menu = menubar.addMenu("❓ راهنما")
+        
+        about_action = QAction("درباره برنامه", self)
+        about_action.triggered.connect(self.show_about)
+        help_menu.addAction(about_action)
+        
+    def setup_connections(self):
+        """راه‌اندازی اتصالات"""
+        self.canvas.annotation_created.connect(self.on_annotation_created)
+        self.canvas.annotation_selected.connect(self.on_annotation_selected_canvas)
+        self.files_list.itemClicked.connect(self.on_file_selected)
         
     def open_folder(self):
-        folder_path = filedialog.askdirectory(title="Select Image Folder")
-        if folder_path:
-            self.load_images_from_folder(folder_path)
+        """باز کردن پوشه تصاویر"""
+        folder = QFileDialog.getExistingDirectory(self, "انتخاب پوشه تصاویر")
+        if folder:
+            self.load_images_from_folder(folder)
             
-    def load_images_from_folder(self, folder_path):
+    def load_images_from_folder(self, folder_path: str):
+        """بارگذاری تصاویر از پوشه"""
         extensions = ('.png', '.jpg', '.jpeg', '.bmp', '.tiff', '.gif')
         self.image_files = []
         
+        folder = Path(folder_path)
+        
+        # استفاده از set برای جلوگیری از تکرار
+        image_set = set()
+        
         for ext in extensions:
-            self.image_files.extend(Path(folder_path).glob(f"*{ext}"))
-            self.image_files.extend(Path(folder_path).glob(f"*{ext.upper()}"))
-            
-        self.image_files = sorted(self.image_files)
+            # جستجوی حروف کوچک
+            image_set.update(folder.glob(f"*{ext}"))
+            # جستجوی حروف بزرگ
+            image_set.update(folder.glob(f"*{ext.upper()}"))
+        
+        self.image_files = sorted(list(image_set))
         
         if self.image_files:
             self.current_index = 0
-            self.update_file_list()
+            self.update_files_list()
             self.load_current_image()
-            self.status_var.set(f"Loaded {len(self.image_files)} images")
+            self.status_label.setText(f"{len(self.image_files)} تصویر بارگذاری شد")
         else:
-            messagebox.showwarning("No Images", "No supported image files found in the selected folder.")
+            QMessageBox.warning(self, "هشدار", "هیچ تصویری در پوشه انتخاب شده پیدا نشد!")
             
-    def update_file_list(self):
-        self.file_listbox.delete(0, tk.END)
+    def update_files_list(self):
+        """به‌روزرسانی لیست فایل‌ها"""
+        self.files_list.clear()
         for i, file_path in enumerate(self.image_files):
-            self.file_listbox.insert(tk.END, file_path.name)
+            item = QListWidgetItem(f"📷 {file_path.name}")
             if i == self.current_index:
-                self.file_listbox.selection_set(i)
-                
-        self.image_counter_var.set(f"{self.current_index + 1} / {len(self.image_files)}")
+                item.setSelected(True)
+            self.files_list.addItem(item)
+            
+        self.counter_label.setText(f"{self.current_index + 1} / {len(self.image_files)}")
         
     def load_current_image(self):
+        """بارگذاری تصویر جاری"""
         if not self.image_files:
             return
             
         image_path = str(self.image_files[self.current_index])
         
-        try:
-            # Load image
-            self.original_image = cv2.imread(image_path)
-            self.original_image = cv2.cvtColor(self.original_image, cv2.COLOR_BGR2RGB)
-            
-            # Load existing annotations
+        if self.canvas.set_image(image_path):
             self.load_existing_annotations(image_path)
+            self.update_canvas_annotations()
+            self.update_annotations_list()
+            self.status_label.setText(f"تصویر بارگذاری شد: {Path(image_path).name}")
+        else:
+            QMessageBox.critical(self, "خطا", "نمی‌توان تصویر را بارگذاری کرد!")
             
-            # Display image
-            self.display_image()
-            self.update_annotation_list()
+    def load_existing_annotations(self, image_path: str):
+        """بارگذاری حاشیه‌نویسی‌های موجود"""
+        self.annotations.clear()
+        
+        # بر اساس فرمت انتخاب شده
+        if self.annotation_format == "YOLO":
+            self.load_yolo_annotations(image_path)
+        elif self.annotation_format == "Pascal VOC":
+            self.load_pascal_voc_annotations(image_path)
+        elif self.annotation_format == "CSV":
+            self.load_csv_annotations(image_path)
             
-        except Exception as e:
-            messagebox.showerror("Error", f"Could not load image: {str(e)}")
+    def load_yolo_annotations(self, image_path: str):
+        """بارگذاری حاشیه‌نویسی‌های YOLO"""
+        txt_path = Path(image_path).with_suffix('.txt')
+        
+        # اگر مسیر خروجی تنظیم شده، از آنجا بخوان
+        if self.output_dir:
+            txt_path = Path(self.output_dir) / txt_path.name
+        
+        # در غیر این صورت از کنار فایل تصویر
+        if not txt_path.exists():
+            txt_path = Path(image_path).with_suffix('.txt')
             
-    def display_image(self):
-        if self.original_image is None:
-            return
+        if txt_path.exists():
+            # دریافت اندازه تصویر
+            try:
+                pixmap = QPixmap(image_path)
+                if pixmap.isNull():
+                    return
+                    
+                img_width, img_height = pixmap.width(), pixmap.height()
+                
+                with open(txt_path, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line:
+                            continue
+                            
+                        parts = line.split()
+                        if len(parts) == 5:
+                            try:
+                                class_id, center_x, center_y, width, height = map(float, parts)
+                                
+                                # تبدیل به مختصات مطلق
+                                x1 = int((center_x - width/2) * img_width)
+                                y1 = int((center_y - height/2) * img_height)
+                                x2 = int((center_x + width/2) * img_width)
+                                y2 = int((center_y + height/2) * img_height)
+                                
+                                # اطمینان از اینکه مختصات در محدوده تصویر هستند
+                                x1 = max(0, min(x1, img_width))
+                                y1 = max(0, min(y1, img_height))
+                                x2 = max(0, min(x2, img_width))
+                                y2 = max(0, min(y2, img_height))
+                                
+                                # دریافت نام کلاس
+                                class_name = self.classes[int(class_id)] if int(class_id) < len(self.classes) else "unknown"
+                                
+                                self.annotations.append({
+                                    'class': class_name,
+                                    'x1': x1, 'y1': y1, 'x2': x2, 'y2': y2,
+                                    'color': QColor("#FF5722")
+                                })
+                            except (ValueError, IndexError) as e:
+                                print(f"خطا در پردازش خط: {line} - {e}")
+                                continue
+                                
+            except Exception as e:
+                print(f"خطا در بارگذاری حاشیه‌نویسی‌ها: {e}")
+                
+    def load_pascal_voc_annotations(self, image_path: str):
+        """بارگذاری حاشیه‌نویسی‌های Pascal VOC"""
+        xml_path = Path(image_path).with_suffix('.xml')
+        
+        # اگر مسیر خروجی تنظیم شده، از آنجا بخوان
+        if self.output_dir:
+            xml_path = Path(self.output_dir) / xml_path.name
             
-        # Calculate scale to fit canvas
-        img_height, img_width = self.original_image.shape[:2]
-        scale_x = self.canvas_width / img_width
-        scale_y = self.canvas_height / img_height
-        self.scale_factor = min(scale_x, scale_y, 1.0)  # Don't scale up
+        # در غیر این صورت از کنار فایل تصویر
+        if not xml_path.exists():
+            xml_path = Path(image_path).with_suffix('.xml')
+            
+        if xml_path.exists():
+            try:
+                tree = ET.parse(xml_path)
+                root = tree.getroot()
+                
+                for obj in root.findall('object'):
+                    name_elem = obj.find('name')
+                    bbox_elem = obj.find('bndbox')
+                    
+                    if name_elem is None or bbox_elem is None:
+                        continue
+                        
+                    class_name = name_elem.text
+                    
+                    xmin_elem = bbox_elem.find('xmin')
+                    ymin_elem = bbox_elem.find('ymin')
+                    xmax_elem = bbox_elem.find('xmax')
+                    ymax_elem = bbox_elem.find('ymax')
+                    
+                    if None in [xmin_elem, ymin_elem, xmax_elem, ymax_elem]:
+                        continue
+                        
+                    try:
+                        x1 = int(float(xmin_elem.text))
+                        y1 = int(float(ymin_elem.text))
+                        x2 = int(float(xmax_elem.text))
+                        y2 = int(float(ymax_elem.text))
+                        
+                        self.annotations.append({
+                            'class': class_name,
+                            'x1': x1, 'y1': y1, 'x2': x2, 'y2': y2,
+                            'color': QColor("#FF5722")
+                        })
+                    except ValueError as e:
+                        print(f"خطا در پردازش bbox: {e}")
+                        continue
+                        
+            except Exception as e:
+                print(f"خطا در بارگذاری XML: {e}")
+                
+    def load_csv_annotations(self, image_path: str):
+        """بارگذاری حاشیه‌نویسی‌های CSV"""
+        csv_path = Path(image_path).with_suffix('.csv')
         
-        # Resize image
-        new_width = int(img_width * self.scale_factor)
-        new_height = int(img_height * self.scale_factor)
-        
-        resized_image = cv2.resize(self.original_image, (new_width, new_height))
-        
-        # Convert to PIL and then to Tkinter format
-        pil_image = Image.fromarray(resized_image)
-        
-        # Draw annotations on image
-        self.draw_annotations_on_image(pil_image)
-        
-        # Convert to PhotoImage
-        self.current_image = ImageTk.PhotoImage(pil_image)
-        
-        # Display on canvas
-        self.canvas.delete("all")
-        self.canvas.create_image(0, 0, anchor=tk.NW, image=self.current_image)
-        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
-        
-    def draw_annotations_on_image(self, pil_image):
-        draw = ImageDraw.Draw(pil_image)
-        
+        # اگر مسیر خروجی تنظیم شده، از آنجا بخوان
+        if self.output_dir:
+            csv_path = Path(self.output_dir) / csv_path.name
+            
+        # در غیر این صورت از کنار فایل تصویر
+        if not csv_path.exists():
+            csv_path = Path(image_path).with_suffix('.csv')
+            
+        if csv_path.exists():
+            try:
+                with open(csv_path, 'r', encoding='utf-8') as f:
+                    reader = csv.DictReader(f)
+                    for row in reader:
+                        if 'filename' in row and row['filename'] == Path(image_path).name:
+                            try:
+                                self.annotations.append({
+                                    'class': row.get('class', 'unknown'),
+                                    'x1': int(float(row['x1'])), 
+                                    'y1': int(float(row['y1'])),
+                                    'x2': int(float(row['x2'])), 
+                                    'y2': int(float(row['y2'])),
+                                    'color': QColor("#FF5722")
+                                })
+                            except (ValueError, KeyError) as e:
+                                print(f"خطا در پردازش CSV row: {e}")
+                                continue
+                                
+            except Exception as e:
+                print(f"خطا در بارگذاری CSV: {e}")
+                
+    def update_canvas_annotations(self):
+        """به‌روزرسانی حاشیه‌نویسی‌های کانواس"""
+        self.canvas.clear_all_annotations()
+        for ann in self.annotations:
+            self.canvas.add_annotation(
+                ann['x1'], ann['y1'], ann['x2'], ann['y2'],
+                ann['class'], ann.get('color', QColor("#FF5722"))
+            ) 
+                
+    def update_annotations_list(self):
+        """به‌روزرسانی لیست حاشیه‌نویسی‌ها"""
+        self.annotations_list.clear()
         for i, ann in enumerate(self.annotations):
-            # Scale coordinates
-            x1 = int(ann['x1'] * self.scale_factor)
-            y1 = int(ann['y1'] * self.scale_factor)
-            x2 = int(ann['x2'] * self.scale_factor)
-            y2 = int(ann['y2'] * self.scale_factor)
-            
-            # Choose color
-            color = 'red' if i == self.current_annotation else 'green'
-            
-            # Draw rectangle
-            draw.rectangle([x1, y1, x2, y2], outline=color, width=2)
-            
-            # Draw class label
-            draw.text((x1, y1 - 15), ann['class'], fill=color)
-            
-    def on_canvas_click(self, event):
-        if self.original_image is None:
-            return
-            
-        self.drawing = True
-        self.start_x = self.canvas.canvasx(event.x)
-        self.start_y = self.canvas.canvasy(event.y)
+            self.annotations_list.add_annotation_item(ann, i)
+    def on_annotation_created(self, annotation_data: dict):
+        annotation_data['class'] = self.current_class
+        annotation_data['color'] = QColor("#FF5722")
         
-    def on_canvas_drag(self, event):
-        if not self.drawing:
-            return
-            
-        # Clear previous temporary rectangle
-        self.canvas.delete("temp_rect")
+        self.annotations.append(annotation_data)
         
-        # Draw temporary rectangle
-        current_x = self.canvas.canvasx(event.x)
-        current_y = self.canvas.canvasy(event.y)
-        
-        self.canvas.create_rectangle(
-            self.start_x, self.start_y, current_x, current_y,
-            outline='blue', tags="temp_rect", width=2
+        # افزودن به کانواس
+        self.canvas.add_annotation(
+            annotation_data['x1'], annotation_data['y1'],
+            annotation_data['x2'], annotation_data['y2'],
+            annotation_data['class'], annotation_data['color']
         )
         
-    def on_canvas_release(self, event):
-        if not self.drawing:
-            return
-            
-        self.drawing = False
+        self.update_annotations_list()
         
-        # Get final coordinates
-        end_x = self.canvas.canvasx(event.x)
-        end_y = self.canvas.canvasy(event.y)
-        
-        # Convert back to original image coordinates
-        x1 = int(min(self.start_x, end_x) / self.scale_factor)
-        y1 = int(min(self.start_y, end_y) / self.scale_factor)
-        x2 = int(max(self.start_x, end_x) / self.scale_factor)
-        y2 = int(max(self.start_y, end_y) / self.scale_factor)
-        
-        # Check if rectangle is large enough
-        if abs(x2 - x1) > 10 and abs(y2 - y1) > 10:
-            # Add annotation
-            annotation = {
-                'class': self.class_var.get(),
-                'x1': x1,
-                'y1': y1,
-                'x2': x2,
-                'y2': y2
-            }
+    def on_annotation_selected_canvas(self, index: int):
+        """انتخاب حاشیه‌نویسی از کانواس"""
+        if 0 <= index < self.annotations_list.count():
+            self.annotations_list.setCurrentRow(index)
             
-            self.annotations.append(annotation)
-            self.update_annotation_list()
-            self.display_image()
+    def on_annotation_selected(self, item: QListWidgetItem):
+        """انتخاب حاشیه‌نویسی از لیست"""
+        index = item.data(Qt.ItemDataRole.UserRole)
+        if index is not None:
+            self.canvas.select_annotation(index)
             
-        # Clear temporary rectangle
-        self.canvas.delete("temp_rect")
-        
-    def on_canvas_double_click(self, event):
-        # Select annotation at click position
-        click_x = int(self.canvas.canvasx(event.x) / self.scale_factor)
-        click_y = int(self.canvas.canvasy(event.y) / self.scale_factor)
-        
-        for i, ann in enumerate(self.annotations):
-            if ann['x1'] <= click_x <= ann['x2'] and ann['y1'] <= click_y <= ann['y2']:
-                self.current_annotation = i
-                self.ann_listbox.selection_clear(0, tk.END)
-                self.ann_listbox.selection_set(i)
-                self.display_image()
-                break
-                
-    def update_annotation_list(self):
-        self.ann_listbox.delete(0, tk.END)
-        for i, ann in enumerate(self.annotations):
-            self.ann_listbox.insert(tk.END, f"{ann['class']} ({ann['x1']}, {ann['y1']}, {ann['x2']}, {ann['y2']})")
-            
-    def on_annotation_select(self, event):
-        selection = self.ann_listbox.curselection()
-        if selection:
-            self.current_annotation = selection[0]
-            self.display_image()
-            
-    def on_file_select(self, event):
-        selection = self.file_listbox.curselection()
-        if selection:
-            self.current_index = selection[0]
+    def on_file_selected(self, item: QListWidgetItem):
+        """انتخاب فایل از لیست"""
+        row = self.files_list.row(item)
+        if row != self.current_index and 0 <= row < len(self.image_files):
+            self.save_annotations()  # ذخیره خودکار
+            self.current_index = row
             self.load_current_image()
-            self.update_file_list()
+            self.update_files_list()
             
-    def on_class_change(self, event):
-        self.current_class = self.class_var.get()
+    def on_class_changed(self, class_name: str):
+        """تغییر کلاس انتخاب شده"""
+        self.current_class = class_name
         
-    def on_format_change(self, event):
-        self.annotation_format = self.format_var.get()
+    def on_format_changed(self, format_name: str):
+        """تغییر فرمت خروجی"""
+        self.annotation_format = format_name
+        # بارگذاری مجدد حاشیه‌نویسی‌ها با فرمت جدید
+        if self.image_files:
+            self.load_current_image()
         
     def previous_image(self):
+        """تصویر قبلی"""
         if self.image_files and self.current_index > 0:
-            self.save_annotations()  # Auto-save current annotations
+            self.save_annotations()
             self.current_index -= 1
             self.load_current_image()
-            self.update_file_list()
+            self.update_files_list()
             
     def next_image(self):
+        """تصویر بعدی"""
         if self.image_files and self.current_index < len(self.image_files) - 1:
-            self.save_annotations()  # Auto-save current annotations
+            self.save_annotations()
             self.current_index += 1
             self.load_current_image()
-            self.update_file_list()
+            self.update_files_list()
             
-    def delete_selected_annotation(self):
-        selection = self.ann_listbox.curselection()
-        if selection:
-            index = selection[0]
-            del self.annotations[index]
-            self.current_annotation = None
-            self.update_annotation_list()
-            self.display_image()
+    def delete_annotation(self):
+        """حذف حاشیه‌نویسی انتخاب شده"""
+        current_row = self.annotations_list.currentRow()
+        if current_row >= 0 and current_row < len(self.annotations):
+            # حذف از لیست
+            del self.annotations[current_row]
             
-    def clear_all_annotations(self):
-        if messagebox.askyesno("Clear All", "Are you sure you want to clear all annotations?"):
+            # حذف از کانواس
+            self.canvas.remove_annotation(current_row)
+            
+            # به‌روزرسانی کانواس و لیست
+            self.update_canvas_annotations()
+            self.update_annotations_list()
+            
+    def clear_annotations(self):
+        """پاک کردن همه حاشیه‌نویسی‌ها"""
+        reply = QMessageBox.question(
+            self, "تأیید", "آیا مطمئن هستید که می‌خواهید همه برچسب‌ها را پاک کنید؟",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
             self.annotations.clear()
-            self.current_annotation = None
-            self.update_annotation_list()
-            self.display_image()
+            self.canvas.clear_all_annotations()
+            self.update_annotations_list()
             
     def manage_classes(self):
-        dialog = ClassManagerDialog(self.root, self.class_names)
-        if dialog.result:
-            self.class_names = dialog.result
-            self.class_combo['values'] = self.class_names
-            if self.current_class not in self.class_names:
-                self.current_class = self.class_names[0] if self.class_names else "object"
-                self.class_var.set(self.current_class)
+        """مدیریت کلاس‌ها"""
+        dialog = ClassManagerDialog(self, self.classes)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self.classes = dialog.classes[:]
+            self.class_combo.clear()
+            self.class_combo.addItems(self.classes)
+            if self.classes:
+                self.current_class = self.classes[0]
                 
-    def set_output_format(self):
-        formats = ["YOLO", "Pascal VOC", "COCO", "CSV"]
-        choice = simpledialog.askstring("Output Format", f"Choose format: {', '.join(formats)}")
-        if choice and choice in formats:
-            self.annotation_format = choice
-            self.format_var.set(choice)
-            
-    def set_output_directory(self):
-        directory = filedialog.askdirectory(title="Select Output Directory")
+    def select_output_dir(self):
+        """انتخاب مسیر خروجی"""
+        directory = QFileDialog.getExistingDirectory(self, "انتخاب مسیر خروجی")
         if directory:
             self.output_dir = directory
-            self.status_var.set(f"Output directory set to: {directory}")
+            self.output_label.setText(f"📁 {directory}")
             
-    def zoom_in(self):
-        self.scale_factor = min(self.scale_factor * 1.2, 5.0)
-        self.display_image()
-        
-    def zoom_out(self):
-        self.scale_factor = max(self.scale_factor / 1.2, 0.1)
-        self.display_image()
-        
-    def fit_to_window(self):
-        self.display_image()
-        
     def save_annotations(self):
+        """ذخیره حاشیه‌نویسی‌ها"""
         if not self.image_files or not self.annotations:
             return
             
         image_path = self.image_files[self.current_index]
         
-        if self.annotation_format == "YOLO":
-            self.save_yolo_format(image_path)
-        elif self.annotation_format == "Pascal VOC":
-            self.save_pascal_voc_format(image_path)
-        elif self.annotation_format == "COCO":
-            self.save_coco_format(image_path)
-        elif self.annotation_format == "CSV":
-            self.save_csv_format(image_path)
+        try:
+            if self.annotation_format == "YOLO":
+                self.save_yolo_format(image_path)
+            elif self.annotation_format == "Pascal VOC":
+                self.save_pascal_voc_format(image_path)
+            elif self.annotation_format == "COCO":
+                self.save_coco_format(image_path)
+            elif self.annotation_format == "CSV":
+                self.save_csv_format(image_path)
+                
+            self.status_label.setText("برچسب‌ها ذخیره شدند ✅")
+        except Exception as e:
+            QMessageBox.critical(self, "خطا", f"خطا در ذخیره: {str(e)}")
             
-    def save_yolo_format(self, image_path):
+    def save_yolo_format(self, image_path: Path):
+        """ذخیره در فرمت YOLO"""
         output_path = image_path.with_suffix('.txt')
         if self.output_dir:
             output_path = Path(self.output_dir) / output_path.name
             
-        img_height, img_width = self.original_image.shape[:2]
+        # اطمینان از وجود مسیر
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+            
+        # دریافت اندازه تصویر
+        pixmap = QPixmap(str(image_path))
+        if pixmap.isNull():
+            return
+            
+        img_width, img_height = pixmap.width(), pixmap.height()
         
-        with open(output_path, 'w') as f:
+        with open(output_path, 'w', encoding='utf-8') as f:
             for ann in self.annotations:
-                # Convert to YOLO format
-                class_id = self.class_names.index(ann['class']) if ann['class'] in self.class_names else 0
+                try:
+                    class_id = self.classes.index(ann['class']) if ann['class'] in self.classes else 0
+                    
+                    center_x = ((ann['x1'] + ann['x2']) / 2) / img_width
+                    center_y = ((ann['y1'] + ann['y2']) / 2) / img_height
+                    width = (ann['x2'] - ann['x1']) / img_width
+                    height = (ann['y2'] - ann['y1']) / img_height
+                    
+                    f.write(f"{class_id} {center_x:.6f} {center_y:.6f} {width:.6f} {height:.6f}\n")
+                except Exception as e:
+                    print(f"خطا در ذخیره annotation: {e}")
+                    continue
                 
-                center_x = ((ann['x1'] + ann['x2']) / 2) / img_width
-                center_y = ((ann['y1'] + ann['y2']) / 2) / img_height
-                width = (ann['x2'] - ann['x1']) / img_width
-                height = (ann['y2'] - ann['y1']) / img_height
-                
-                f.write(f"{class_id} {center_x:.6f} {center_y:.6f} {width:.6f} {height:.6f}\n")
-                
-    def save_pascal_voc_format(self, image_path):
+    def save_pascal_voc_format(self, image_path: Path):
+        """ذخیره در فرمت Pascal VOC"""
         output_path = image_path.with_suffix('.xml')
         if self.output_dir:
             output_path = Path(self.output_dir) / output_path.name
             
-        img_height, img_width, img_depth = self.original_image.shape
+        # اطمینان از وجود مسیر
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+            
+        # دریافت اندازه تصویر
+        pixmap = QPixmap(str(image_path))
+        if pixmap.isNull():
+            return
+            
+        img_width, img_height = pixmap.width(), pixmap.height()
         
-        # Create XML structure
+        # ایجاد XML
         annotation = ET.Element('annotation')
         
         folder = ET.SubElement(annotation, 'folder')
@@ -498,7 +1554,7 @@ class ImageLabeler:
         size = ET.SubElement(annotation, 'size')
         ET.SubElement(size, 'width').text = str(img_width)
         ET.SubElement(size, 'height').text = str(img_height)
-        ET.SubElement(size, 'depth').text = str(img_depth)
+        ET.SubElement(size, 'depth').text = '3'
         
         for ann in self.annotations:
             obj = ET.SubElement(annotation, 'object')
@@ -513,18 +1569,26 @@ class ImageLabeler:
             ET.SubElement(bndbox, 'xmax').text = str(ann['x2'])
             ET.SubElement(bndbox, 'ymax').text = str(ann['y2'])
             
-        # Write XML file
+        # نوشتن فایل
         xml_str = minidom.parseString(ET.tostring(annotation)).toprettyxml(indent="  ")
-        with open(output_path, 'w') as f:
+        with open(output_path, 'w', encoding='utf-8') as f:
             f.write(xml_str)
             
-    def save_coco_format(self, image_path):
-        # This is a simplified COCO format save for individual images
+    def save_coco_format(self, image_path: Path):
+        """ذخیره در فرمت COCO"""
         output_path = image_path.with_suffix('.json')
         if self.output_dir:
             output_path = Path(self.output_dir) / output_path.name
             
-        img_height, img_width = self.original_image.shape[:2]
+        # اطمینان از وجود مسیر
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+            
+        # دریافت اندازه تصویر
+        pixmap = QPixmap(str(image_path))
+        if pixmap.isNull():
+            return
+            
+        img_width, img_height = pixmap.width(), pixmap.height()
         
         coco_data = {
             "images": [{
@@ -534,11 +1598,11 @@ class ImageLabeler:
                 "height": img_height
             }],
             "annotations": [],
-            "categories": [{"id": i+1, "name": name} for i, name in enumerate(self.class_names)]
+            "categories": [{"id": i+1, "name": name} for i, name in enumerate(self.classes)]
         }
         
         for i, ann in enumerate(self.annotations):
-            class_id = self.class_names.index(ann['class']) + 1 if ann['class'] in self.class_names else 1
+            class_id = self.classes.index(ann['class']) + 1 if ann['class'] in self.classes else 1
             
             coco_ann = {
                 "id": i + 1,
@@ -550,109 +1614,48 @@ class ImageLabeler:
             }
             coco_data["annotations"].append(coco_ann)
             
-        with open(output_path, 'w') as f:
-            json.dump(coco_data, f, indent=2)
+        with open(output_path, 'w', encoding='utf-8') as f:
+            json.dump(coco_data, f, indent=2, ensure_ascii=False)
             
-    def save_csv_format(self, image_path):
+    def save_csv_format(self, image_path: Path):
+        """ذخیره در فرمت CSV"""
         output_path = image_path.with_suffix('.csv')
         if self.output_dir:
             output_path = Path(self.output_dir) / output_path.name
             
-        with open(output_path, 'w', newline='') as f:
+        # اطمینان از وجود مسیر
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+            
+        with open(output_path, 'w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
             writer.writerow(['filename', 'class', 'x1', 'y1', 'x2', 'y2'])
             
             for ann in self.annotations:
                 writer.writerow([
-                    image_path.name,
-                    ann['class'],
-                    ann['x1'],
-                    ann['y1'],
-                    ann['x2'],
-                    ann['y2']
+                    image_path.name, ann['class'],
+                    ann['x1'], ann['y1'], ann['x2'], ann['y2']
                 ])
                 
-    def load_existing_annotations(self, image_path):
-        self.annotations.clear()
-        image_path = Path(image_path)
-        
-        # Try to load based on current format
-        if self.annotation_format == "YOLO":
-            self.load_yolo_annotations(image_path)
-        elif self.annotation_format == "Pascal VOC":
-            self.load_pascal_voc_annotations(image_path)
-        elif self.annotation_format == "CSV":
-            self.load_csv_annotations(image_path)
-            
-    def load_yolo_annotations(self, image_path):
-        txt_path = image_path.with_suffix('.txt')
-        if self.output_dir:
-            txt_path = Path(self.output_dir) / txt_path.name
-            
-        if txt_path.exists():
-            img_height, img_width = self.original_image.shape[:2]
-                        
-            with open(txt_path, 'r') as f:
-                for line in f:
-                    parts = line.strip().split()
-                    if len(parts) == 5:
-                        class_id, center_x, center_y, width, height = map(float, parts)
-
-                        x1 = int((center_x - width/2) * img_width)
-                        y1 = int((center_y - height/2) * img_height)
-                        x2 = int((center_x + width/2) * img_width)
-                        y2 = int((center_y + height/2) * img_height)
-
-                        class_name = self.class_names[int(class_id)] if int(class_id) < len(self.class_names) else "unknown"
-
-                        self.annotations.append({
-                            'class': class_name,
-                            'x1': x1,
-                            'y1': y1,
-                            'x2': x2,
-                            'y2': y2
-                        })
-
-                            
-    def load_csv_annotations(self, image_path):
-        csv_path = image_path.with_suffix('.csv')
-        if self.output_dir:
-            csv_path = Path(self.output_dir) / csv_path.name
-            
-        if csv_path.exists():
-            try:
-                with open(csv_path, 'r') as f:
-                    reader = csv.DictReader(f)
-                    for row in reader:
-                        if row['filename'] == image_path.name:
-                            self.annotations.append({
-                                'class': row['class'],
-                                'x1': int(row['x1']),
-                                'y1': int(row['y1']),
-                                'x2': int(row['x2']),
-                                'y2': int(row['y2'])
-                            })
-            except (KeyError, ValueError):
-                pass
-                
-    def export_all_annotations(self):
+    def export_all(self):
+        """صادرات همه حاشیه‌نویسی‌ها"""
         if not self.image_files:
-            messagebox.showwarning("No Images", "Please load images first.")
+            QMessageBox.warning(self, "هشدار", "ابتدا تصاویری را بارگذاری کنید!")
             return
             
         if not self.output_dir:
-            self.set_output_directory()
+            self.select_output_dir()
             if not self.output_dir:
                 return
                 
-        # Save current annotations first
-        self.save_annotations()
+        # نوار پیشرفت
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setMaximum(len(self.image_files))
         
-        # Export all images
         success_count = 0
+        
         for i, image_path in enumerate(self.image_files):
             try:
-                # Load image
+                # بارگذاری تصویر
                 original_index = self.current_index
                 self.current_index = i
                 self.load_current_image()
@@ -661,252 +1664,131 @@ class ImageLabeler:
                     self.save_annotations()
                     success_count += 1
                     
-            except Exception as e:
-                print(f"Error processing {image_path}: {str(e)}")
+                self.progress_bar.setValue(i + 1)
+                QApplication.processEvents()
                 
-        # Restore original image
+            except Exception as e:
+                print(f"خطا در پردازش {image_path}: {e}")
+                
+        # بازگردانی تصویر اصلی
         self.current_index = original_index
         self.load_current_image()
         
-        messagebox.showinfo("Export Complete", f"Successfully exported annotations for {success_count} images.")
+        self.progress_bar.setVisible(False)
+        
+        QMessageBox.information(
+            self, "اتمام صادرات",
+            f"صادرات با موفقیت انجام شد!\n{success_count} فایل پردازش شد."
+        )
+        
+    def show_about(self):
+        """نمایش درباره برنامه"""
+        QMessageBox.about(
+            self, "درباره برنامه",
+            """
+            <h2>ابزار پیشرفته برچسب‌گذاری تصاویر</h2>
+            <p><b>نسخه:</b> 2.0</p>
+            <p><b>سازنده:</b>Mahdi Mirzakhni</p>
+            <p><b>توضیحات:</b> ابزاری قدرتمند و زیبا برای برچسب‌گذاری اشیاء در تصاویر</p>
+            
+            <h3>ویژگی‌ها:</h3>
+            <ul>
+                <li>رابط کاربری مدرن و زیبا</li>
+                <li>پشتیبانی از فرمت‌های YOLO، Pascal VOC، COCO و CSV</li>
+                <li>کنترل‌های زوم و ناوبری پیشرفته</li>
+                <li>مدیریت کلاس‌ها</li>
+                <li>ذخیره خودکار</li>
+                <li>صادرات دسته‌ای</li>
+            </ul>
+            
+            <p><i>با آرزوی موفقیت در پروژه‌های یادگیری ماشین شما!</i></p>
+            """
+        )
         
     def load_settings(self):
-        # Load settings from config file if exists
-        config_path = Path("labeler_config.json")
-        if config_path.exists():
-            try:
-                with open(config_path, 'r') as f:
-                    config = json.load(f)
-                    self.class_names = config.get('class_names', self.class_names)
-                    self.annotation_format = config.get('format', self.annotation_format)
-                    self.output_dir = config.get('output_dir', self.output_dir)
-            except:
-                pass
-                
+        """بارگذاری تنظیمات"""
+        try:
+            self.classes = self.settings.value("classes", self.classes)
+            self.annotation_format = self.settings.value("format", self.annotation_format)
+            self.output_dir = self.settings.value("output_dir", self.output_dir)
+            
+            # به‌روزرسانی UI
+            self.class_combo.clear()
+            self.class_combo.addItems(self.classes)
+            self.format_combo.setCurrentText(self.annotation_format)
+            if self.output_dir:
+                self.output_label.setText(f"📁 {self.output_dir}")
+        except Exception as e:
+            print(f"خطا در بارگذاری تنظیمات: {e}")
+            
     def save_settings(self):
-        config = {
-            'class_names': self.class_names,
-            'format': self.annotation_format,
-            'output_dir': self.output_dir
-        }
+        """ذخیره تنظیمات"""
+        try:
+            self.settings.setValue("classes", self.classes)
+            self.settings.setValue("format", self.annotation_format)
+            self.settings.setValue("output_dir", self.output_dir)
+        except Exception as e:
+            print(f"خطا در ذخیره تنظیمات: {e}")
         
-        with open("labeler_config.json", 'w') as f:
-            json.dump(config, f, indent=2)
-
-
-class ClassManagerDialog:
-    def __init__(self, parent, class_names):
-        self.result = None
-        self.class_names = class_names.copy()
+    def closeEvent(self, event):
+        """مدیریت بستن برنامه"""
+        try:
+            self.save_annotations()
+            self.save_settings()
+        except Exception as e:
+            print(f"خطا در بستن برنامه: {e}")
+        finally:
+            event.accept()
         
-        # Create dialog window
-        self.dialog = tk.Toplevel(parent)
-        self.dialog.title("Manage Classes")
-        self.dialog.geometry("400x500")
-        self.dialog.transient(parent)
-        self.dialog.grab_set()
-        
-        # Center the dialog
-        self.dialog.update_idletasks()
-        x = (self.dialog.winfo_screenwidth() // 2) - (400 // 2)
-        y = (self.dialog.winfo_screenheight() // 2) - (500 // 2)
-        self.dialog.geometry(f"400x500+{x}+{y}")
-        
-        self.create_widgets()
-        
-    def create_widgets(self):
-        # Main frame
-        main_frame = ttk.Frame(self.dialog, padding=10)
-        main_frame.pack(fill=tk.BOTH, expand=True)
-        
-        # Title
-        title_label = ttk.Label(main_frame, text="Manage Object Classes", font=('Arial', 14, 'bold'))
-        title_label.pack(pady=(0, 10))
-        
-        # Class list frame
-        list_frame = ttk.LabelFrame(main_frame, text="Current Classes", padding=5)
-        list_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
-        
-        # Listbox with scrollbar
-        listbox_frame = ttk.Frame(list_frame)
-        listbox_frame.pack(fill=tk.BOTH, expand=True)
-        
-        self.class_listbox = tk.Listbox(listbox_frame)
-        scrollbar = ttk.Scrollbar(listbox_frame, orient=tk.VERTICAL, command=self.class_listbox.yview)
-        self.class_listbox.configure(yscrollcommand=scrollbar.set)
-        
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        self.class_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        
-        # Update listbox
-        self.update_class_list()
-        
-        # Add class frame
-        add_frame = ttk.Frame(main_frame)
-        add_frame.pack(fill=tk.X, pady=(0, 10))
-        
-        ttk.Label(add_frame, text="Add Class:").pack(side=tk.LEFT)
-        self.class_entry = ttk.Entry(add_frame, width=20)
-        self.class_entry.pack(side=tk.LEFT, padx=(5, 0), fill=tk.X, expand=True)
-        self.class_entry.bind('<Return>', self.add_class)
-        
-        ttk.Button(add_frame, text="Add", command=self.add_class).pack(side=tk.LEFT, padx=(5, 0))
-        
-        # Buttons frame
-        button_frame = ttk.Frame(main_frame)
-        button_frame.pack(fill=tk.X, pady=(0, 10))
-        
-        ttk.Button(button_frame, text="Remove Selected", command=self.remove_selected).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Button(button_frame, text="Move Up", command=self.move_up).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Button(button_frame, text="Move Down", command=self.move_down).pack(side=tk.LEFT, padx=(0, 5))
-        
-        # Predefined classes frame
-        predefined_frame = ttk.LabelFrame(main_frame, text="Quick Add", padding=5)
-        predefined_frame.pack(fill=tk.X, pady=(0, 10))
-        
-        predefined_classes = ["person", "car", "truck", "bus", "motorcycle", "bicycle", "dog", "cat", "bird"]
-        
-        for i, cls in enumerate(predefined_classes):
-            if i % 3 == 0:
-                row_frame = ttk.Frame(predefined_frame)
-                row_frame.pack(fill=tk.X, pady=2)
-            
-            ttk.Button(row_frame, text=cls, width=12, 
-                      command=lambda c=cls: self.add_predefined_class(c)).pack(side=tk.LEFT, padx=2)
-        
-        # Dialog buttons
-        dialog_button_frame = ttk.Frame(main_frame)
-        dialog_button_frame.pack(fill=tk.X)
-        
-        ttk.Button(dialog_button_frame, text="OK", command=self.ok_clicked).pack(side=tk.RIGHT, padx=(5, 0))
-        ttk.Button(dialog_button_frame, text="Cancel", command=self.cancel_clicked).pack(side=tk.RIGHT)
-        
-        # Focus on entry
-        self.class_entry.focus()
-        
-    def update_class_list(self):
-        self.class_listbox.delete(0, tk.END)
-        for cls in self.class_names:
-            self.class_listbox.insert(tk.END, cls)
-            
-    def add_class(self, event=None):
-        class_name = self.class_entry.get().strip()
-        if class_name and class_name not in self.class_names:
-            self.class_names.append(class_name)
-            self.update_class_list()
-            self.class_entry.delete(0, tk.END)
-            
-    def add_predefined_class(self, class_name):
-        if class_name not in self.class_names:
-            self.class_names.append(class_name)
-            self.update_class_list()
-            
-    def remove_selected(self):
-        selection = self.class_listbox.curselection()
-        if selection:
-            index = selection[0]
-            del self.class_names[index]
-            self.update_class_list()
-            
-    def move_up(self):
-        selection = self.class_listbox.curselection()
-        if selection and selection[0] > 0:
-            index = selection[0]
-            self.class_names[index], self.class_names[index-1] = self.class_names[index-1], self.class_names[index]
-            self.update_class_list()
-            self.class_listbox.selection_set(index-1)
-            
-    def move_down(self):
-        selection = self.class_listbox.curselection()
-        if selection and selection[0] < len(self.class_names) - 1:
-            index = selection[0]
-            self.class_names[index], self.class_names[index+1] = self.class_names[index+1], self.class_names[index]
-            self.update_class_list()
-            self.class_listbox.selection_set(index+1)
-            
-    def ok_clicked(self):
-        self.result = self.class_names
-        self.dialog.destroy()
-        
-    def cancel_clicked(self):
-        self.dialog.destroy()
+    def keyPressEvent(self, event):
+        """مدیریت کلیدهای میانبر"""
+        try:
+            if event.key() == Qt.Key.Key_Left:
+                self.previous_image()
+            elif event.key() == Qt.Key.Key_Right:
+                self.next_image()
+            elif event.key() == Qt.Key.Key_Delete:
+                self.delete_annotation()
+            elif event.key() == Qt.Key.Key_Escape:
+                self.clear_annotations()
+            elif event.key() == Qt.Key.Key_Plus or event.key() == Qt.Key.Key_Equal:
+                self.canvas.zoom_in()
+            elif event.key() == Qt.Key.Key_Minus:
+                self.canvas.zoom_out()
+            elif event.key() == Qt.Key.Key_0:
+                self.canvas.fit_to_window()
+            else:
+                super().keyPressEvent(event)
+        except Exception as e:
+            print(f"خطا در پردازش کلید: {e}")
+            super().keyPressEvent(event)
 
 
 def main():
-    # Create main window
-    root = tk.Tk()
-    
-    # Set application icon (if available)
+    """تابع اصلی"""
     try:
-        root.iconbitmap("labeler_icon.ico")
-    except:
-        pass
-    
-    # Create and run application
-    app = ImageLabeler(root)
-    
-    # Handle window closing
-    def on_closing():
-        app.save_annotations()   # <--- اینو اضافه کن
-        app.save_settings()
-        root.destroy()
-    
-    root.protocol("WM_DELETE_WINDOW", on_closing)
-    
-    # Keyboard shortcuts
-    def on_key_press(event):
-        if event.keysym == 'Left':
-            app.previous_image()
-        elif event.keysym == 'Right':
-            app.next_image()
-        elif event.keysym == 'Delete':
-            app.delete_selected_annotation()
-        elif event.keysym == 'Escape':
-            app.clear_all_annotations()
-        elif event.char == '+':
-            app.zoom_in()
-        elif event.char == '-':
-            app.zoom_out()
-        elif event.char == '0':
-            app.fit_to_window()
-            
-    root.bind('<Key>', on_key_press)
-    root.focus_set()
-    
-    # Start the application
-    root.mainloop()
+        app = QApplication(sys.argv)
+        
+        # تنظیم فونت
+        font = QFont("Segoe UI", 9)
+        app.setFont(font)
+        
+        # تنظیم نام برنامه
+        app.setApplicationName("Advanced Image Labeler")
+        app.setApplicationVersion("2.0")
+        app.setOrganizationName("AI Tools")
+        
+        # ایجاد پنجره اصلی
+        window = AdvancedImageLabeler()
+        window.show()
+        
+        # اجرای برنامه
+        sys.exit(app.exec())
+        
+    except Exception as e:
+        print(f"خطای کلی در برنامه: {e}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
     main()
-
-
-                        
-    def load_pascal_voc_annotations(self, image_path):
-        xml_path = image_path.with_suffix('.xml')
-        if self.output_dir:
-            xml_path = Path(self.output_dir) / xml_path.name
-
-        if xml_path.exists():
-            try:
-                tree = ET.parse(xml_path)
-                root = tree.getroot()
-
-                for obj in root.findall('object'):
-                    class_name = obj.find('name').text
-                    bbox = obj.find('bndbox')
-
-                    x1 = int(bbox.find('xmin').text)
-                    y1 = int(bbox.find('ymin').text)
-                    x2 = int(bbox.find('xmax').text)
-                    y2 = int(bbox.find('ymax').text)
-
-                    self.annotations.append({
-                        'class': class_name,
-                        'x1': x1,
-                        'y1': y1,
-                        'x2': x2,
-                        'y2': y2
-                    })
-            except ET.ParseError:
-                pass
