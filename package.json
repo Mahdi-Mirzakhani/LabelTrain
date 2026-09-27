@@ -1,0 +1,69 @@
+{
+  "name": "labelstudio",
+  "version": "1.0.0",
+  "description": "Advanced Image Labeling Tool — Electron + React + TypeScript",
+  "main": "build/main/main.js",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "clean": "node -e \"require('node:fs').rmSync('build',{recursive:true,force:true})\"",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "electron:dev": "vite",
+    "electron:build": "npm run build && electron-builder",
+    "electron:build:win": "npm run build && electron-builder --win",
+    "typecheck": "tsc -b --noEmit",
+    "test": "node --experimental-strip-types tests/smoke.ts && node --experimental-strip-types tests/license.ts && npm run test:phases",
+    "test:phases": "node --experimental-strip-types tests/phase1-annotate.ts && node --experimental-strip-types tests/phase2-dataset.ts && node --experimental-strip-types tests/phase3-train-split.ts && node --experimental-strip-types tests/phase4-search.ts && node --experimental-strip-types tests/phase5-settings-time.ts && node --experimental-strip-types tests/phase6-data-loss.ts && node --experimental-strip-types tests/phase7-obb.ts",
+    "license:keygen": "node server/keygen.mjs",
+    "license:sign": "node server/sign-license.mjs",
+    "license:server": "node server/server.mjs"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^33.3.1",
+    "electron-builder": "^25.1.8",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "typescript": "^5.7.3",
+    "vite": "^6.0.7",
+    "vite-plugin-electron": "^0.29.0",
+    "vite-plugin-electron-renderer": "^0.14.6"
+  },
+  "build": {
+    "appId": "com.labelstudio.app",
+    "productName": "LabelStudio",
+    "files": [
+      "build/renderer/**/*",
+      "build/main/**/*"
+    ],
+    "directories": {
+      "output": "build/release",
+      "buildResources": "build-resources"
+    },
+    "extraResources": [
+      {
+        "from": "scripts",
+        "to": "scripts"
+      },
+      {
+        "from": "models",
+        "to": "models"
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}
