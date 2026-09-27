@@ -205,6 +205,9 @@ export interface ElectronAPI {
     outputDir: string;
   }) => Promise<Record<string, BBox[]>>;
   saveAnnotations: (req: SaveAnnotationsRequest) => Promise<SaveAnnotationsResult>;
+  /** Move an image and all its label files to the Recycle Bin. */
+  deleteImage: (req: { imagePath: string; outputDir: string; format: AnnotationFormat }) =>
+    Promise<{ ok: boolean; removed: string[]; error?: string }>;
 
   // Dataset
   splitDataset: (cfg: SplitConfig) => Promise<SplitResult>;

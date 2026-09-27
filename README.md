@@ -194,6 +194,19 @@ The renderer always works with normalized 0..1 coordinates internally. At the IO
 
 The output directory is configurable in **Settings → Output directory**. Empty means "same folder as the image."
 
+## Deleting an image
+
+**Delete image** in the bar above the canvas (or `Ctrl + Del`, or the command
+palette) removes the image on screen together with every annotation of it: its
+label file wherever the app would read one (output directory, sibling
+`labels/`, beside the image), the `labels_obb` / `labels_hbb` companions, and its
+entries in a COCO json. It asks first, then moves the files to the **Recycle
+Bin** — never a hard delete — so a wrong click is undone by restoring them from
+there. Nothing is moved into a folder under `images/`: Ultralytics reads that
+folder recursively and would train on it. The list then shows the image that
+followed. See `deleteImageAndLabels` in `electron/annotation-io.ts` and
+`tests/phase10-delete.ts`.
+
 ## Review progress
 
 Going through a large folder one image at a time — checking labels someone else
@@ -270,6 +283,7 @@ width. See `tests/phase7-obb.ts`.
 | `N` / `P` | Next / Previous image |
 | `→` `↓` / `←` `↑` | Next / Previous image *(Annotate tab)* |
 | `Del` / `Backspace` | Delete selected box |
+| `Ctrl/⌘ + Del` (`⌘ + Backspace`) | Delete the image and its labels (to the Recycle Bin) |
 | `Esc` | Deselect |
 | `1`–`9` | Set active class |
 | `Ctrl/⌘ + S` | Save current image |

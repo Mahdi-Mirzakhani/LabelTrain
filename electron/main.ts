@@ -14,6 +14,7 @@ import { collectSystemInfo } from "./system-info.ts";
 import { LicenseManager } from "./license/manager.ts";
 import { LICENSE_CONFIG } from "./license/config.ts";
 import type {
+  AnnotationFormat,
   AutoLabelRequest,
   AutoLabelResult,
   ImageEntry,
@@ -387,6 +388,10 @@ function registerHandlers() {
   ipcMain.handle("images:metadata", async (_e, imagePaths: string[]): Promise<ImageEntry[]> => {
     return await loadImageMetadata(imagePaths);
   });
+
+  // To the Recycle Bin, never a hard delete: a wrong click can be put back.
+  ipcMain.handle("images:delete", async (_e, req: { imagePath: string; outputDir: string; format: AnnotationFormat }) =>
+    ann.deleteImageAndLabels(req.imagePath, req.outputDir, req.format, (p) => shell.trashItem(p)));
 
   ipcMain.handle("images:dataUrl", async (_e, p: string): Promise<string> => {
     const buf = await fs.readFile(p);

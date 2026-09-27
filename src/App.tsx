@@ -894,6 +894,57 @@ function AppShell() {
     }
   }, [cur, classes, savePlan, outputDir, classNameOf, pushToast, reportDropped]);
 
+  // Delete the image on screen together with its label file(s). Both go to the
+  // Recycle Bin (electron main: shell.trashItem), so a wrong click can be put
+  // back from there. The list then shows the image that followed it.
+  const deletingImage = useRef(false);
+  const deleteImage = useCallback(async () => {
+    const im = imagesRef.current[curIdxRef.current];
+    if (!inElectron || !im?.path || deletingImage.current) return;
+    const n = im.boxes.length;
+    const fa = lang === "fa";
+    const what = !im.hydrated ? "" : fa
+      ? ` و ${n} باکس آن`
+      : ` and its ${n} box${n === 1 ? "" : "es"}`;
+    const ask = fa
+      ? `«${im.name}»${what} حذف شود؟\nعکس و فایل لیبلش به سطل بازیافت ویندوز می‌روند و از آنجا برمی‌گردند.`
+      : `Delete ${im.name}${what}?\nThe image and its label file go to the Recycle Bin, where they can be restored.`;
+    if (!window.confirm(ask)) return;
+    deletingImage.current = true;
+    try {
+      // A pending auto-save of this image must not land after the delete and
+      // recreate its label file (main also serialises the two per image).
+      if (saveTimer.current) window.clearTimeout(saveTimer.current);
+      const res = await window.api!.deleteImage({ imagePath: im.path, outputDir, format: savePlan.format });
+      if (!res.ok && !res.removed.includes(im.path)) {
+        pushToast({ icon: "alert", sticky: true, msg: `${t("Couldn't delete")} ${im.name}: ${res.error}` });
+        return;
+      }
+      if (!res.ok) pushToast({ icon: "alert", sticky: true, msg: res.error ?? "" });
+      // Undo snapshots hold the old image list; replaying one would resurrect
+      // an image whose file is gone.
+      flushHistory();
+      undoStack.current = [];
+      redoStack.current = [];
+      // Leaving a deleted image must not mark it reviewed.
+      prevNameRef.current = null;
+      const left = imagesRef.current.length - 1;
+      setImages(ims => ims.filter(x => x.path !== im.path));
+      setCurIdx(i => Math.max(0, Math.min(i, left - 1)));
+      setSelId(null);
+      setProgress(p => {
+        if (!p || (!p.reviewed.has(im.name) && p.last !== im.name)) return p;
+        const reviewed = new Set(p.reviewed);
+        reviewed.delete(im.name);
+        progressDirty.current = true;
+        return { reviewed, last: p.last === im.name ? null : p.last };
+      });
+      pushToast({ icon: "trash", msg: `${im.name} ${t("moved to the Recycle Bin, with its labels")}` });
+    } finally {
+      deletingImage.current = false;
+    }
+  }, [lang, outputDir, savePlan, flushHistory, pushToast]);
+
   const deleteSel = useCallback(() => {
     if (!selId) return;
     setBoxes(bs => bs.filter(b => b.id !== selId));
@@ -1140,6 +1191,7 @@ function AppShell() {
       { id: "classes", group: "Actions", icon: "tag", label: "Manage classes", run: () => setClassMgr(true) },
       { id: "sys", group: "Actions", icon: "cpu", label: "Open system analysis", kw: "cuda gpu ram", run: () => setSysPanel(true) },
       { id: "save", group: "Actions", icon: "save", label: "Save current image", keys: ["⌘", "S"], run: saveNow },
+      { id: "delete-image", group: "Actions", icon: "trash", label: "Delete image and its labels", kw: "remove recycle bin trash", keys: ["⌘", "Del"], run: () => { void deleteImage(); } },
       { id: "undo", group: "Actions", icon: "arrowLeft", label: "Undo", keys: ["⌘", "Z"], run: undo },
       { id: "redo", group: "Actions", icon: "arrowRight", label: "Redo", keys: ["⌘", "⇧", "Z"], run: redo },
       { id: "theme", group: "Settings", icon: theme === "dark" ? "sun" : "moon", label: `Switch to ${theme === "dark" ? "light" : "dark"} theme`, run: () => setTheme(theme === "dark" ? "light" : "dark") },
@@ -1158,7 +1210,7 @@ function AppShell() {
       label: c.group === "Files" ? c.label : t(c.label),
       group: t(c.group),
     }));
-  }, [theme, lang, density, images, go, openImageInAnnotate, saveNow, runExport, undo, redo]);
+  }, [theme, lang, density, images, go, openImageInAnnotate, saveNow, runExport, undo, redo, deleteImage]);
 
   const runCmd = useCallback((c: CmdItem) => c.run?.(), []);
 
@@ -1199,6 +1251,11 @@ function AppShell() {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "y") {
         e.preventDefault(); redo(); return;
       }
+      // Ctrl+Del (Cmd+Backspace on a Mac, as in Finder) deletes the image;
+      // plain Del stays "delete the selected box".
+      if ((e.metaKey || e.ctrlKey) && (e.key === "Delete" || e.key === "Backspace") && tab === "annotate") {
+        e.preventDefault(); void deleteImage(); return;
+      }
       if (e.metaKey || e.ctrlKey) {
         if (e.key === "=" || e.key === "+") { e.preventDefault(); setZoom(z => Math.min(8, +(z * 1.2).toFixed(2))); return; }
         if (e.key === "-") { e.preventDefault(); setZoom(z => Math.max(0.2, +(z * 0.83).toFixed(2))); return; }
@@ -1234,7 +1291,7 @@ function AppShell() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [screen, tab, classes, go, deleteSel, saveNow, undo, redo, overlayOpen, cmdk,
+  }, [screen, tab, classes, go, deleteSel, deleteImage, saveNow, undo, redo, overlayOpen, cmdk,
       obb, selId, setBoxes]);
 
   // ---- Routes ----
@@ -1375,6 +1432,10 @@ function AppShell() {
                 </button>
                 <button className="btn btn-secondary sm" onClick={() => setClassMgr(true)}>
                   <Icon name="tag" size={14} />{t("Classes")}
+                </button>
+                <button className="btn btn-secondary sm" onClick={deleteImage} disabled={!cur?.path}
+                  title={`${t("Delete image and its labels")} (Ctrl+Del)`}>
+                  <Icon name="trash" size={14} />{t("Delete image")}
                 </button>
                 <button className="btn btn-primary sm" onClick={saveNow}>
                   <Icon name="save" size={14} />{t("Save")}

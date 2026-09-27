@@ -85,6 +85,9 @@ export interface ElectronAPI {
   loadProject: (folder: string) => Promise<ProjectMeta | null>;
   saveProject: (project: ProjectMeta) => Promise<{ ok: boolean; error?: string }>;
   loadProgress: (folder: string) => Promise<ReviewProgress>;
+  /** Move an image and all its label files to the Recycle Bin. */
+  deleteImage: (req: { imagePath: string; outputDir: string; format: AnnotationFormat }) =>
+    Promise<{ ok: boolean; removed: string[]; error?: string }>;
   saveProgress: (folder: string, progress: ReviewProgress) => Promise<{ ok: boolean; error?: string }>;
   listRecentProjects: () => Promise<RecentProject[]>;
   clearRecentProjects: () => Promise<void>;

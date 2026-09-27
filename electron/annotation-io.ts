@@ -582,6 +582,59 @@ async function deleteExisting(req: SaveAnnotationsRequest): Promise<void> {
   }
 }
 
+// ============================================================
+//  DELETE AN IMAGE
+// ============================================================
+
+/**
+ * Remove an image and every annotation of it: the label file wherever this
+ * module would read one from (explicit output dir, sibling labels/ dir, the
+ * image's own folder) or write a companion to (labels_obb / labels_hbb), and
+ * its entry in a COCO json. `remove` does the removing — the app passes
+ * Electron's shell.trashItem, so both land in the Recycle Bin and can be put
+ * back. The image goes first; if that fails nothing else is touched.
+ *
+ * Runs under the same per-image lock as saveAnnotations, so a save already on
+ * its way lands before the delete rather than recreating the label file after.
+ */
+export async function deleteImageAndLabels(
+  imagePath: string,
+  outputDir: string,
+  format: AnnotationFormat,
+  remove: (p: string) => Promise<void>,
+): Promise<{ ok: boolean; removed: string[]; error?: string }> {
+  return await withFileLock(imagePath, async () => {
+    const removed: string[] = [];
+    try {
+      await remove(imagePath);
+      removed.push(imagePath);
+    } catch (err) {
+      return { ok: false, removed, error: err instanceof Error ? err.message : String(err) };
+    }
+    const stem = path.basename(imagePath, path.extname(imagePath));
+    const dirs = new Set(readDirs(imagePath, outputDir).map(d => path.resolve(d)));
+    const primary = await writeDirFor(imagePath, outputDir);
+    for (const suffix of ["_obb", "_hbb"]) {
+      dirs.add(path.resolve(path.dirname(primary), path.basename(primary) + suffix));
+    }
+    const failed: string[] = [];
+    for (const dir of dirs) {
+      for (const ext of [".txt", ".xml", ".csv"]) {
+        const f = path.join(dir, stem + ext);
+        if (!(await exists(f))) continue;
+        try { await remove(f); removed.push(f); } catch { failed.push(f); }
+      }
+    }
+    if (format === "COCO") {
+      const cocoPath = annotationFileFor(imagePath, "COCO", outputDir);
+      await withFileLock(cocoPath, () => deleteExisting({ imagePath, outputDir, format, annotations: [], classes: [] }));
+    }
+    return failed.length
+      ? { ok: false, removed, error: `the image is gone but these label files could not be removed: ${failed.join(", ")}` }
+      : { ok: true, removed };
+  });
+}
+
 // A YOLO label file whose class index has no name in the project list is read
 // back as `unknown_<index>` (see loadYolo). Recognize that on the way out so a
 // plain open→save round-trip writes the SAME index back instead of discarding

@@ -43,6 +43,7 @@ const api: ElectronAPI = {
   detectClasses: (folder: string) => ipcRenderer.invoke("dataset:detectClasses", folder),
   pickClassesFile: () => ipcRenderer.invoke("dataset:pickClassesFile"),
   loadAnnotationsBatch: (req) => ipcRenderer.invoke("ann:loadBatch", req),
+  deleteImage: (req) => ipcRenderer.invoke("images:delete", req),
   saveAnnotations: (req: SaveAnnotationsRequest) => ipcRenderer.invoke("ann:save", req),
   splitDataset: (cfg: SplitConfig) => ipcRenderer.invoke("dataset:split", cfg),
   exportDataset: (cfg: ExportConfig) => ipcRenderer.invoke("dataset:export", cfg),

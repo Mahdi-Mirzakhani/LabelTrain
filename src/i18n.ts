@@ -36,6 +36,8 @@ const FA: Record<string, string> = {
   // review progress
   "Not reviewed": "بازبینی‌نشده", "reviewed": "بازبینی‌شده",   // "Reviewed" is under the dataset tab below
   "You stopped here last time": "دفعهٔ قبل اینجا متوقف شدید", "Resumed at": "ادامه از",
+  "Delete image": "حذف عکس", "Delete image and its labels": "حذف عکس و لیبل‌هایش",
+  "Couldn't delete": "حذف نشد:", "moved to the Recycle Bin, with its labels": "همراه لیبل‌هایش به سطل بازیافت رفت",
   "Couldn't save the review progress — is the folder read-only?":
     "پیشرفت بازبینی ذخیره نشد — آیا پوشه فقط‌خواندنی است؟",
   "Drop a folder of images here, or add them from disk to start labeling.":
