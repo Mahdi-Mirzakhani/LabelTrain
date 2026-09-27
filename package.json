@@ -15,7 +15,7 @@
     "electron:build:win": "npm run build && electron-builder --win",
     "typecheck": "tsc -b --noEmit",
     "test": "node --experimental-strip-types tests/smoke.ts && node --experimental-strip-types tests/license.ts && npm run test:phases",
-    "test:phases": "node --experimental-strip-types tests/phase1-annotate.ts && node --experimental-strip-types tests/phase2-dataset.ts && node --experimental-strip-types tests/phase3-train-split.ts && node --experimental-strip-types tests/phase4-search.ts && node --experimental-strip-types tests/phase5-settings-time.ts && node --experimental-strip-types tests/phase6-data-loss.ts && node --experimental-strip-types tests/phase7-obb.ts",
+    "test:phases": "node --experimental-strip-types tests/phase1-annotate.ts && node --experimental-strip-types tests/phase2-dataset.ts && node --experimental-strip-types tests/phase3-train-split.ts && node --experimental-strip-types tests/phase4-search.ts && node --experimental-strip-types tests/phase5-settings-time.ts && node --experimental-strip-types tests/phase6-data-loss.ts && node --experimental-strip-types tests/phase7-obb.ts && node --experimental-strip-types tests/phase8-progress.ts",
     "license:keygen": "node server/keygen.mjs",
     "license:sign": "node server/sign-license.mjs",
     "license:server": "node server/server.mjs"

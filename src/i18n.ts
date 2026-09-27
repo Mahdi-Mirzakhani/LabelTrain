@@ -33,6 +33,11 @@ const FA: Record<string, string> = {
   "Unlabeled": "بدون لیبل", "all": "همه", "unlabeled": "بدون لیبل",
   "images": "تصویر", "boxes": "باکس", "Add images": "افزودن تصاویر",
   "No images in this project": "تصویری در این پروژه نیست",
+  // review progress
+  "Not reviewed": "بازبینی‌نشده", "reviewed": "بازبینی‌شده",   // "Reviewed" is under the dataset tab below
+  "You stopped here last time": "دفعهٔ قبل اینجا متوقف شدید", "Resumed at": "ادامه از",
+  "Couldn't save the review progress — is the folder read-only?":
+    "پیشرفت بازبینی ذخیره نشد — آیا پوشه فقط‌خواندنی است؟",
   "Drop a folder of images here, or add them from disk to start labeling.":
     "یک پوشه از تصاویر را اینجا رها کنید یا از دیسک اضافه کنید تا لیبل‌گذاری شروع شود.",
   // tools

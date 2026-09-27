@@ -66,6 +66,12 @@ export interface RecentProject extends ProjectMeta {
   previewPaths?: string[];
 }
 
+/** Which images of a folder the user has gone past, and the one they were on last. */
+export interface ReviewProgress {
+  reviewed: string[];   // file names
+  last: string | null;  // file name
+}
+
 export interface ElectronAPI {
   minimizeWindow: () => Promise<void>;
   toggleMaximizeWindow: () => Promise<boolean>;
@@ -76,6 +82,8 @@ export interface ElectronAPI {
   openSaveDialog: (defaultName?: string) => Promise<string | null>;
   loadProject: (folder: string) => Promise<ProjectMeta | null>;
   saveProject: (project: ProjectMeta) => Promise<{ ok: boolean; error?: string }>;
+  loadProgress: (folder: string) => Promise<ReviewProgress>;
+  saveProgress: (folder: string, progress: ReviewProgress) => Promise<{ ok: boolean; error?: string }>;
   listRecentProjects: () => Promise<RecentProject[]>;
   clearRecentProjects: () => Promise<void>;
   removeRecentProject: (imageDir: string) => Promise<void>;

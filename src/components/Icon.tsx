@@ -63,6 +63,7 @@ const ICONS: Record<string, ReactNode> = {
   // Oriented box: a tilted rectangle with a turn arrow over it.
   rotate: <><rect x="5" y="8" width="14" height="9" rx="1" transform="rotate(-18 12 12.5)"/><path d="M8.5 4.6A8 8 0 0 1 12 3.8"/><path d="M7.2 2.6 8.6 4.7 6.4 5.8"/></>,
   eye: <><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></>,
+  bookmark: <path d="M6 3h12v18l-6-4-6 4Z"/>,
   palette: <><circle cx="12" cy="12" r="9"/><circle cx="8" cy="10" r="1"/><circle cx="12" cy="7.5" r="1"/><circle cx="16" cy="10" r="1"/><path d="M12 21a3 3 0 0 0 0-6 1.5 1.5 0 0 1 0-3h1a5 5 0 0 0 0-9"/></>,
   file: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/></>,
   hash: <path d="M4 9h16M4 15h16M10 3 8 21M16 3l-2 18"/>,

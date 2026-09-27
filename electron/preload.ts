@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from "electron";
 import type {
   ElectronAPI,
   ProjectMeta,
+  ReviewProgress,
   SaveAnnotationsRequest,
   LoadAnnotationsRequest,
   SplitConfig,
@@ -29,6 +30,8 @@ const api: ElectronAPI = {
   openSaveDialog: (defaultName) => ipcRenderer.invoke("dialog:openSave", defaultName),
   loadProject: (folder) => ipcRenderer.invoke("project:load", folder),
   saveProject: (project: ProjectMeta) => ipcRenderer.invoke("project:save", project),
+  loadProgress: (folder: string) => ipcRenderer.invoke("progress:load", folder),
+  saveProgress: (folder: string, progress: ReviewProgress) => ipcRenderer.invoke("progress:save", folder, progress),
   listRecentProjects: () => ipcRenderer.invoke("project:listRecent"),
   clearRecentProjects: () => ipcRenderer.invoke("project:clearRecent"),
   removeRecentProject: (imageDir: string) => ipcRenderer.invoke("project:removeRecent", imageDir),

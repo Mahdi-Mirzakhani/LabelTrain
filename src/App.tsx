@@ -20,6 +20,7 @@ import {
 } from "./settings-store";
 import { clearThumbs } from "./lib/thumbs";
 import { normalizeAngle, toRad } from "./lib/obb";
+import { resumeIndex, stepProgress, type ListFilter, type Progress } from "./lib/progress";
 import type {
   ClassDef, CmdItem, Density, ImageItem, LangCode, NBox, ObbSaveMode,
   ProjectInfo, ThemeMode, Toast, AnnotationFormat,
@@ -181,6 +182,19 @@ function AppShell() {
 
   const cur = images[curIdx];
 
+  // -------- Review progress --------
+  // Which images of the open folder the user has gone past, and the one to
+  // reopen at (lib/progress.ts); saved beside the images by electron/progress.ts.
+  // `lastStop` is where the PREVIOUS session ended and stays put during this
+  // one, so the list can show how far the review had got.
+  const [progress, setProgress] = useState<Progress | null>(null);
+  const [lastStop, setLastStop] = useState<string | null>(null);
+  const progressFolder = useRef<string | null>(null);
+  const progressRef = useRef(progress);
+  progressRef.current = progress;
+  const progressDirty = useRef(false);
+  const prevNameRef = useRef<string | null>(null);
+
   // Refs mirror the latest state so the history logic can snapshot it
   // synchronously without threading it through every callback dependency.
   const imagesRef = useRef(images);
@@ -233,7 +247,7 @@ function AppShell() {
   const [selId, setSelId] = useState<string | null>(null);
   const [activeClass, setActiveClass] = useState<string>(classes[0]?.id ?? "");
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<"all" | "labeled" | "unlabeled">("all");
+  const [filter, setFilter] = useState<ListFilter>("all");
   // Optional class-name filter for the file list: show only images that contain
   // at least one box of this class. null = no class filter.
   const [classFilter, setClassFilter] = useState<string | null>(null);
@@ -314,6 +328,49 @@ function AppShell() {
     setSelId(null);
   }, []);
 
+  // Write the review progress if it changed. Reads refs, so it always saves the
+  // latest marks to the folder they belong to — openFolder calls it before
+  // switching folders, the close handshake before quitting.
+  const progressWarned = useRef(false);
+  const saveProgressNow = useCallback(async () => {
+    const folder = progressFolder.current;
+    const p = progressRef.current;
+    if (!inElectron || !folder || !p || !progressDirty.current) return;
+    progressDirty.current = false;
+    const res = await window.api!.saveProgress(folder, { reviewed: [...p.reviewed], last: p.last })
+      .catch(err => ({ ok: false, error: String(err) }));
+    if (!res.ok) {
+      progressDirty.current = true;
+      if (!progressWarned.current) {
+        progressWarned.current = true;
+        pushToast({ icon: "alert", msg: t("Couldn't save the review progress — is the folder read-only?") });
+      }
+    }
+  }, [pushToast]);
+  const saveProgressRef = useRef(saveProgressNow);
+  saveProgressRef.current = saveProgressNow;
+
+  // Moving to another image marks the one left behind as reviewed.
+  const curName = cur?.name ?? null;
+  useEffect(() => {
+    if (!curName) return;
+    const prev = prevNameRef.current;
+    prevNameRef.current = curName;
+    setProgress(p => {
+      if (!p) return p;
+      const next = stepProgress(p, prev, curName);
+      if (next !== p) progressDirty.current = true;
+      return next;
+    });
+  }, [curName]);
+
+  // Debounced: paging through images quickly writes the file once.
+  useEffect(() => {
+    if (!progressDirty.current) return;
+    const id = window.setTimeout(() => { void saveProgressNow(); }, 1000);
+    return () => window.clearTimeout(id);
+  }, [progress, saveProgressNow]);
+
   // navigation
   const go = useCallback((d: number) => {
     setCurIdx(i => Math.max(0, Math.min(images.length - 1, i + d)));
@@ -330,6 +387,13 @@ function AppShell() {
     // flash old images / boxes while the new folder is being scanned.
     clearThumbs();
     warnedDrops.current.clear();
+    // The previous folder's review marks go to ITS file before they are dropped.
+    await saveProgressRef.current();
+    progressFolder.current = null;
+    progressDirty.current = false;
+    prevNameRef.current = null;
+    setProgress(null);
+    setLastStop(null);
     setImages([]);
     setCurIdx(0);
     setSelId(null);
@@ -378,8 +442,13 @@ function AppShell() {
 
       // 2. Return the directory listing immediately. Dimensions, timestamps,
       // and annotations are loaded only when an image is selected.
-      const list = await listImagesInFolder(folder);
+      const [list, saved] = await Promise.all([
+        listImagesInFolder(folder),
+        window.api!.loadProgress(folder).catch(() => ({ reviewed: [] as string[], last: null })),
+      ]);
       const classNames = effectiveClasses.map(c => c.name);
+      const start = resumeIndex(list.map(im => im.name), saved.last);
+      const resumed = saved.last !== null && list[start]?.name === saved.last;
 
       // Two files with the same stem (photo.jpg + photo.png) map to the SAME
       // label file — whichever is saved last silently overwrites the other,
@@ -446,7 +515,13 @@ function AppShell() {
       // leaving `hydrated: true`, so the on-demand loader below skipped it and
       // the first image looked permanently unlabeled.
       setImages(list.map(im => im.hydrated ? im : { ...im, boxes: [], labeled: false }));
-      setCurIdx(0);
+      // Reopen where the review stopped. The image we land on is not "gone
+      // past", so it must not be marked on arrival.
+      prevNameRef.current = list[start]?.name ?? null;
+      progressFolder.current = folder;
+      setProgress({ reviewed: new Set(saved.reviewed), last: list[start]?.name ?? null });
+      setLastStop(resumed ? saved.last : null);
+      setCurIdx(start);
       setSelId(null);
       setLoading(false);
 
@@ -474,6 +549,11 @@ function AppShell() {
       });
 
       pushToast({ icon: "folder", msg: `Opened ${meta.name} — ${list.length} image${list.length === 1 ? "" : "s"}` });
+      if (resumed) {
+        const names = new Set(list.map(im => im.name));
+        const done = saved.reviewed.filter(n => names.has(n)).length;
+        pushToast({ icon: "eye", msg: `${t("Resumed at")} ${saved.last} — ${done}/${list.length} ${t("reviewed")}` });
+      }
 
       // YOLO stores class NUMBERS, not names. If this dataset shipped no class
       // list and we couldn't detect one, the names shown are just the app's
@@ -752,7 +832,8 @@ function AppShell() {
   useEffect(() => {
     if (!inElectron) return;
     return window.api!.onBeforeClose(() => {
-      void flushRef.current().finally(() => window.api!.closeReady());
+      void Promise.allSettled([flushRef.current(), saveProgressRef.current()])
+        .finally(() => window.api!.closeReady());
     });
   }, []);
 
@@ -766,7 +847,7 @@ function AppShell() {
   // class kicked off a full disk flush of every dirty image (using the previous
   // class list, no less). Go through the ref so the cleanup fires only on a
   // real unmount but still calls the current implementation.
-  useEffect(() => () => { void flushRef.current(); }, []);
+  useEffect(() => () => { void flushRef.current(); void saveProgressRef.current(); }, []);
 
   const saveNow = useCallback(async () => {
     if (!cur) return;
@@ -1243,7 +1324,8 @@ function AppShell() {
             search={search} setSearch={setSearch}
             filter={filter} setFilter={setFilter}
             classes={classes} classFilter={classFilter} setClassFilter={setClassFilter}
-            classNameOf={classNameOf} loading={loading} />
+            classNameOf={classNameOf} loading={loading}
+            reviewed={progress?.reviewed} lastStop={lastStop} />
           <div className="workspace">
             <div className="wsbar">
               <div className="row gap-md">

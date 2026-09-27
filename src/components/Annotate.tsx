@@ -6,6 +6,7 @@ import { t } from "../i18n";
 import { SHORTCUTS } from "../data";
 import { clampRect } from "../lib/boxes";
 import { normalizeAngle, toDeg, toRad } from "../lib/obb";
+import { matchesFilter, type ListFilter } from "../lib/progress";
 import type { ClassDef, ImageItem, NBox } from "../types";
 
 interface FileListProps {
@@ -14,18 +15,25 @@ interface FileListProps {
   setCurIdx: (i: number) => void;
   search: string;
   setSearch: (s: string) => void;
-  filter: "all" | "labeled" | "unlabeled";
-  setFilter: (f: "all" | "labeled" | "unlabeled") => void;
+  filter: ListFilter;
+  setFilter: (f: ListFilter) => void;
   classes: ClassDef[];
   classFilter: string | null;
   setClassFilter: (c: string | null) => void;
   classNameOf: (key: string) => string;
   loading: boolean;
+  /** Names of the images the user has looked at and moved on from. */
+  reviewed?: Set<string>;
+  /** Where the previous session stopped. */
+  lastStop?: string | null;
 }
+
+const NO_REVIEWS = new Set<string>();
 
 export function FileList({
   images, curIdx, setCurIdx, search, setSearch, filter, setFilter,
   classes, classFilter, setClassFilter, classNameOf, loading,
+  reviewed = NO_REVIEWS, lastStop = null,
 }: FileListProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [scrollTop, setScrollTop] = useState(0);
@@ -35,10 +43,11 @@ export function FileList({
   const filtered = useMemo(() => images
     .map((im, i) => ({ im, i }))
     .filter(({ im }) => im.name.toLowerCase().includes(search.toLowerCase()))
-    .filter(({ im }) => filter === "all" || (filter === "labeled" ? im.labeled : !im.labeled))
+    .filter(({ im }) => matchesFilter(filter, im.labeled, reviewed.has(im.name)))
     .filter(({ im }) => !classFilter || im.boxes.some(b => classNameOf(b.cls) === classFilter)),
-    [images, search, filter, classFilter, classNameOf]);
+    [images, search, filter, classFilter, classNameOf, reviewed]);
   const labeledCount = useMemo(() => images.filter(i => i.labeled).length, [images]);
+  const reviewedCount = useMemo(() => images.filter(i => reviewed.has(i.name)).length, [images, reviewed]);
   const start = Math.max(0, Math.floor(scrollTop / rowHeight) - overscan);
   const end = Math.min(filtered.length, start + 60);
   const visible = filtered.slice(start, end);
@@ -54,8 +63,9 @@ export function FileList({
       scroller.scrollTop = bottom - scroller.clientHeight;
     }
   }, [curIdx, filtered]);
-  const labels: Record<"all" | "labeled" | "unlabeled", string> = {
+  const labels: Record<ListFilter, string> = {
     all: t("All images"), labeled: t("Labeled"), unlabeled: t("Unlabeled"),
+    reviewed: t("Reviewed"), unreviewed: t("Not reviewed"),
   };
 
   return (
@@ -82,7 +92,7 @@ export function FileList({
           {menuOpen && (
             <div className="dropmenu" style={{ top: "110%", left: 0, right: 0, maxHeight: 360, overflowY: "auto" }}>
               <div className="cmdk-group">{t("Status")}</div>
-              {(["all", "labeled", "unlabeled"] as const).map(f => (
+              {(["all", "labeled", "unlabeled", "reviewed", "unreviewed"] as const).map(f => (
                 <div key={f} className="menu-item" onClick={() => { setFilter(f); setMenuOpen(false); }}>
                   <Icon name={filter === f ? "check" : "dot"} size={14}
                     style={{ opacity: filter === f ? 1 : 0 }} />
@@ -133,6 +143,7 @@ export function FileList({
                 <div className="thumb-wrap">
                   <Thumb src={im.thumb} label={im.name} className="thumb" />
                   {im.labeled && <span className="thumb-check"><Icon name="check" size={9} /></span>}
+                  {reviewed.has(im.name) && <span className="thumb-seen" title={t("Reviewed")}><Icon name="eye" size={9} /></span>}
                 </div>
                 <div className="file-meta">
                   <div className="file-name">{im.name}</div>
@@ -140,6 +151,9 @@ export function FileList({
                     {im.hydrated && im.labeled ? `${im.boxes.length} ${t("boxes")}` : im.hydrated ? t("unlabeled") : "…"} · {im.modified}
                   </div>
                 </div>
+                {lastStop === im.name && (
+                  <span className="file-stop" title={t("You stopped here last time")}><Icon name="bookmark" size={14} /></span>
+                )}
               </div>
             ))}
           </div>
@@ -147,6 +161,9 @@ export function FileList({
       </div>
       <div className="list-foot">
         <span>{curIdx + 1}/{images.length} {t("images")}</span>
+        <span className="row" style={{ gap: 3 }} title={t("Reviewed")}>
+          <Icon name="eye" size={11} />{reviewedCount}
+        </span>
         <span>{labeledCount} {t("labeled")}</span>
       </div>
     </div>

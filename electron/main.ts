@@ -9,6 +9,7 @@ import { promisify } from "node:util";
 
 import * as ann from "./annotation-io.ts";
 import { splitDataset, exportDataset } from "./dataset-split.ts";
+import { loadProgress, saveProgress } from "./progress.ts";
 import { collectSystemInfo } from "./system-info.ts";
 import { LicenseManager } from "./license/manager.ts";
 import { LICENSE_CONFIG } from "./license/config.ts";
@@ -18,6 +19,7 @@ import type {
   ImageEntry,
   ProjectMeta,
   RecentProject,
+  ReviewProgress,
   SaveAnnotationsRequest,
   LoadAnnotationsRequest,
   SplitConfig,
@@ -340,6 +342,9 @@ function registerHandlers() {
     await addRecent(project);
     return result;
   });
+
+  ipcMain.handle("progress:load", async (_e, folder: string): Promise<ReviewProgress> => loadProgress(folder));
+  ipcMain.handle("progress:save", async (_e, folder: string, progress: ReviewProgress) => saveProgress(folder, progress));
 
   ipcMain.handle("project:listRecent", async (): Promise<RecentProject[]> => {
     const recent = await loadRecent();

@@ -8,7 +8,8 @@ Ported from the original Python/PyQt6 tool (`main (2).py`) with the same feature
 
 - Multi-project management (recent projects, project metadata stored beside images as `.labeler_project.json`)
 - Annotate canvas: pointer / box tool, draw, move, resize (8 handles), context menu, multi-class
-- File list with search + filter (labeled / unlabeled)
+- File list with search + filter (labeled / unlabeled / reviewed / not reviewed)
+- Review progress: images you have gone past are marked, and a folder reopens where you stopped
 - Dataset overview with KPIs and per-class distribution
 - Train / Val / Test split exporter with `dataset.yaml`
 - **Annotation IO** — full TS port of the original Python AnnotationIO:
@@ -30,6 +31,7 @@ labelstudio/
 │   ├── ipc-types.ts          # shared IPC types
 │   ├── annotation-io.ts      # YOLO/COCO/VOC/CSV (TS port of Python)
 │   ├── dataset-split.ts      # train/val/test split + dataset.yaml
+│   ├── progress.ts           # review progress file (.labeler_progress.json)
 │   └── image-dims.ts         # header-only image dimension reader
 ├── scripts/
 │   └── yolo_infer.py         # invoked by main process for inference
@@ -185,6 +187,30 @@ The renderer always works with normalized 0..1 coordinates internally. At the IO
 | **CSV** | `<name>.csv` per image |
 
 The output directory is configurable in **Settings → Output directory**. Empty means "same folder as the image."
+
+## Review progress
+
+Going through a large folder one image at a time — checking labels someone else
+made, say — takes more than one sitting. The file list keeps track:
+
+| Mark | Meaning |
+| --- | --- |
+| green tick (top) | the image has labels |
+| purple eye (bottom) | you have looked at the image and moved on to another |
+| orange bookmark | where the previous session stopped |
+
+Reopening the folder lands on the image you were on last, with a toast saying
+how many of the folder's images are reviewed; the footer keeps that count too.
+**Filter → Not reviewed** leaves only what is still to do. The image you land
+on is not marked until you leave it, and the bookmark stays where the last
+session ended while you work, so it always shows how far the review had got.
+
+The marks live in `.labeler_progress.json` beside the images (file names, so
+they survive files being added or removed), not in `.labeler_project.json`,
+which is also copied into the recent-projects list. It is written a second
+after you stop moving, when you switch folders and when the app closes, by a
+temp-file-and-rename so a crash cannot leave it half-written. Delete it to
+start the review over. See `tests/phase8-progress.ts`.
 
 ## Oriented boxes (OBB)
 

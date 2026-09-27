@@ -302,6 +302,8 @@ textarea.field{height:auto;padding:var(--sp-sm) var(--sp-md);resize:vertical;min
 .thumb{width:48px;height:36px;border-radius:var(--r-sm);object-fit:cover;flex:none;background:var(--surface-2);position:relative}
 .thumb-wrap{position:relative;flex:none}
 .thumb-check{position:absolute;top:-4px;right:-4px;width:15px;height:15px;border-radius:50%;background:var(--success);color:#fff;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 2px var(--surface)}
+.thumb-seen{position:absolute;bottom:-4px;right:-4px;width:15px;height:15px;border-radius:50%;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 2px var(--surface)}
+.file-stop{flex:none;display:flex;align-items:center;color:var(--warning)}
 .file-meta{flex:1;min-width:0}
 .file-name{font-size:12px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .file-sub{font-size:11px;color:var(--text-tertiary);font-variant-numeric:tabular-nums}
