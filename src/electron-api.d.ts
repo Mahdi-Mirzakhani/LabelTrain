@@ -60,6 +60,8 @@ export interface ProjectMeta {
   lastOpenedAt: number;
   count?: number;
   labeled?: number;
+  /** When `labeled` was last counted over the whole folder (the main process just stores it). */
+  labeledAt?: number;
 }
 
 export interface RecentProject extends ProjectMeta {

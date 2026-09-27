@@ -434,6 +434,23 @@ textarea.field{height:auto;padding:var(--sp-sm) var(--sp-md);resize:vertical;min
 .pm-card:hover{box-shadow:inset 0 0 0 1px var(--border-strong),var(--e2);transform:translateY(-2px)}
 .pm-thumbs{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-top:var(--sp-md)}
 .pm-thumbs img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:var(--r-sm);background:var(--surface-2)}
+.pm-card{position:relative;display:flex;flex-direction:column}
+.pm-remove{position:absolute;top:8px;inset-inline-end:8px;z-index:2;color:var(--text-tertiary);opacity:.55;transition:opacity .12s}
+.pm-card:hover .pm-remove{opacity:1}
+.pm-title{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pm-path{font-size:11px;color:var(--text-tertiary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:start}
+.pm-empty{opacity:.72}
+.pm-empty-hint{grid-column:1/-1;min-height:80px;border-radius:var(--r-md);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:var(--sp-md);background:var(--surface-2);color:var(--text-tertiary);font-size:11px;text-align:center}
+.pm-stats{display:flex;flex-direction:column;gap:7px;margin-top:var(--sp-md)}
+.pm-stat{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-secondary)}
+.pm-stat-label{width:64px;flex:none}
+.pm-stat-bar{flex:1;height:4px;border-radius:2px;background:var(--surface-3);overflow:hidden}
+.pm-stat-bar>span{display:block;height:100%;border-radius:2px;transition:width .4s ease}
+.pm-stat-num{flex:none;min-width:88px;text-align:end;color:var(--text)}
+.pm-stat-pct{color:var(--text-tertiary);margin-inline-start:2px}
+.pm-foot{display:flex;justify-content:space-between;gap:var(--sp-sm);margin-top:auto;padding-top:var(--sp-md);font-size:11px;color:var(--text-tertiary)}
+.pm-foot>span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pm-foot>span:last-child{flex:none}
 .pm-new{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:var(--sp-md);border:1.5px dashed var(--border-strong);background:transparent;color:var(--text-secondary);min-height:200px}
 .pm-new:hover{border-color:var(--primary);color:var(--primary)}
 

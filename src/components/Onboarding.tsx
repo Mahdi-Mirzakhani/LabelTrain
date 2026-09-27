@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { Icon } from "./Icon";
-import { Ring, Thumb } from "./ui";
+import { Thumb } from "./ui";
 import { t, isRTL } from "../i18n";
 import { inElectron, pathToAppUrl } from "../ipc";
+import { ago, matchesProject, pathTail, projectTitle } from "../lib/projects";
 import type { ProjectInfo } from "../types";
 
 interface OnboardingProps {
@@ -97,12 +98,15 @@ export function ProjectManager({ onOpen, onNew }: ProjectManagerProps) {
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [query, setQuery] = useState("");
-  const shown = projects.filter(p => p.name.toLowerCase().includes(query.toLowerCase()));
+  const fa = isRTL();
+  const shown = projects.filter(p => matchesProject(query, projectTitle(p.name, p.imageDir), p.imageDir, p.classes));
 
   const refresh = async () => {
     if (inElectron) {
       const recents = await window.api!.listRecentProjects();
-      setProjects(recents.map((p, i) => ({
+      const reviewed = await Promise.all(recents.map(p =>
+        window.api!.loadProgress(p.imageDir).then(r => r.reviewed.length).catch(() => 0)));
+      const list: ProjectInfo[] = recents.map((p, i) => ({
         id: "rp_" + i,
         name: p.name,
         imageDir: p.imageDir,
@@ -113,10 +117,14 @@ export function ProjectManager({ onOpen, onNew }: ProjectManagerProps) {
         lastOpenedAt: p.lastOpenedAt,
         count: p.count,
         labeled: p.labeled,
+        labeledAt: p.labeledAt,
+        reviewed: reviewed[i],
         thumbs: p.previewPaths?.map(pathToAppUrl),
         fmt: p.format,
-        opened: humanTime(p.lastOpenedAt),
-      })));
+      }));
+      // Most recently opened first; folders with no images of their own last.
+      list.sort((a, b) => Number(!a.count) - Number(!b.count) || b.lastOpenedAt - a.lastOpenedAt);
+      setProjects(list);
     } else {
       setProjects([]);
     }
@@ -210,48 +218,44 @@ export function ProjectManager({ onOpen, onNew }: ProjectManagerProps) {
         ) : (
         <div className="pm-grid" style={{ padding: 0 }}>
           {loaded && shown.map(p => {
-            const pct = p.count ? Math.round((p.labeled ?? 0) / p.count * 100) : 0;
+            const title = projectTitle(p.name, p.imageDir);
+            const count = p.count ?? 0;
+            const empty = count === 0;
+            const classes = p.classes?.length
+              ? " · " + p.classes.slice(0, 3).join(", ") + (p.classes.length > 3 ? "…" : "")
+              : "";
             return (
-              <div key={p.id} className="pm-card" onClick={() => onOpen(p)} style={{ position: "relative" }}>
-                <button
-                  className="iconbtn sm"
-                  onClick={(e) => removeOne(p, e)}
-                  title={isRTL() ? "حذف پروژه از لیست" : "Remove from list"}
-                  style={{
-                    position: "absolute", top: 8, right: 8, zIndex: 2,
-                    color: "var(--text-tertiary)",
-                  }}>
+              <div key={p.id} className={"pm-card" + (empty ? " pm-empty" : "")} onClick={() => onOpen(p)} title={p.imageDir}>
+                <button className="iconbtn sm pm-remove" onClick={(e) => removeOne(p, e)}
+                  title={fa ? "حذف از لیست (فایل‌ها روی دیسک می‌مانند)" : "Remove from list (files stay on disk)"}>
                   <Icon name="trash" size={14} />
                 </button>
-                <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start", paddingRight: 24 }}>
-                  <div className="col gap-sm" style={{ minWidth: 0 }}>
-                    <span className="t-subtitle" style={{
-                      whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                    }}>{p.name}</span>
-                    <span className="t-caption">
-                      {(p.count ?? 0).toLocaleString()} {t("images")} · {p.fmt ?? p.format}
-                    </span>
-                  </div>
-                  <Ring pct={pct} size={42}>
-                    <span className="tnum" style={{ fontSize: 10 }}>{pct}%</span>
-                  </Ring>
+                <div className="col" style={{ gap: 2, minWidth: 0, paddingInlineEnd: 24 }}>
+                  <span className="t-subtitle pm-title">{title}</span>
+                  <span className="pm-path mono" dir="ltr">{pathTail(p.imageDir)}</span>
                 </div>
                 <div className="pm-thumbs" style={{ minHeight: 80 }}>
-                  {p.thumbs && p.thumbs.length > 0 ? p.thumbs.map((src, i) => (
-                    <Thumb key={src} src={src} label={`${p.name} preview ${i + 1}`} />
+                  {!empty && p.thumbs && p.thumbs.length > 0 ? p.thumbs.map((src, i) => (
+                    <Thumb key={src} src={src} label={`${title} preview ${i + 1}`} />
                   )) : (
-                    <div style={{
-                      gridColumn: "1 / -1", minHeight: 80, borderRadius: "var(--r-md)",
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      background: "var(--surface-2)", color: "var(--text-tertiary)",
-                    }}>
-                      <Icon name="folder" size={28} />
+                    <div className="pm-empty-hint">
+                      <Icon name="folder" size={22} />
+                      <span>{fa ? "این پوشه مستقیماً عکسی ندارد" : "No images directly in this folder"}</span>
+                      <span>{fa ? "عکس‌ها احتمالاً در زیرپوشه‌ای مثل images/ هستند" : "They are probably in a subfolder such as images/"}</span>
                     </div>
                   )}
                 </div>
-                <div className="row" style={{ justifyContent: "space-between", marginTop: "var(--sp-md)" }}>
-                  <span className="t-caption">{(p.labeled ?? 0).toLocaleString()} {t("labeled")}</span>
-                  <span className="t-caption">{p.opened}</span>
+                {!empty && (
+                  <div className="pm-stats">
+                    <Stat icon="check" label={t("labeled")} value={p.labeledAt ? p.labeled ?? 0 : null} total={count}
+                      color="var(--success)"
+                      unknown={fa ? "با باز کردن پروژه شمرده می‌شود" : "Counted the next time the project is opened"} />
+                    <Stat icon="eye" label={t("reviewed")} value={p.reviewed ?? 0} total={count} color="var(--primary)" />
+                  </div>
+                )}
+                <div className="pm-foot">
+                  <span>{count.toLocaleString()} {t("images")} · {p.fmt ?? p.format}{classes}</span>
+                  <span>{ago(p.lastOpenedAt, fa)}</span>
                 </div>
               </div>
             );
@@ -273,13 +277,20 @@ export function ProjectManager({ onOpen, onNew }: ProjectManagerProps) {
   );
 }
 
-function humanTime(ms: number): string {
-  if (!ms) return "—";
-  const diff = Date.now() - ms;
-  const min = 60_000, hr = 60 * min, day = 24 * hr;
-  if (diff < min) return "just now";
-  if (diff < hr) return Math.round(diff / min) + " min ago";
-  if (diff < day) return Math.round(diff / hr) + " hours ago";
-  if (diff < 7 * day) return Math.round(diff / day) + " days ago";
-  return new Date(ms).toLocaleDateString();
+/** One progress row on a project card: icon, label, bar, "count (pct%)"; `value` null = not known yet. */
+function Stat({ icon, label, value, total, color, unknown }: {
+  icon: string; label: string; value: number | null; total: number; color: string; unknown?: string;
+}) {
+  const pct = value !== null && total ? Math.min(100, (value / total) * 100) : 0;
+  const pctText = pct > 0 && pct < 1 ? "<1" : String(Math.round(pct));
+  return (
+    <div className="pm-stat" title={value === null ? unknown : undefined}>
+      <Icon name={icon} size={12} style={{ color, flex: "none" }} />
+      <span className="pm-stat-label">{label}</span>
+      <span className="pm-stat-bar"><span style={{ width: `${pct}%`, background: color }} /></span>
+      <span className="pm-stat-num tnum">
+        {value === null ? "—" : <>{value.toLocaleString()} <span className="pm-stat-pct">{pctText}%</span></>}
+      </span>
+    </div>
+  );
 }

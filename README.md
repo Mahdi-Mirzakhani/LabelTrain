@@ -6,7 +6,13 @@ Ported from the original Python/PyQt6 tool (`main (2).py`) with the same feature
 
 ## Features
 
-- Multi-project management (recent projects, project metadata stored beside images as `.labeler_project.json`)
+- Multi-project management (recent projects, project metadata stored beside images as `.labeler_project.json`).
+  Each project card is named after its dataset and split rather than its folder
+  (`…/helmet-merged-v4/train/images` → **helmet-merged-v4 · train**), shows where
+  it lives, how many images are labelled and reviewed, and its classes; search
+  matches names, paths and classes, and folders with no images of their own sink
+  to the end with a hint. The labelled count is exact once a project has been
+  opened and every image read (`src/lib/projects.ts`, `tests/phase9-projects.ts`).
 - Annotate canvas: pointer / box tool, draw, move, resize (8 handles), context menu, multi-class
 - File list with search + filter (labeled / unlabeled / reviewed / not reviewed)
 - Review progress: images you have gone past are marked, and a folder reopens where you stopped

@@ -68,6 +68,10 @@ export interface ProjectInfo {
   lastOpenedAt: number;
   count?: number;
   labeled?: number;
+  /** When `labeled` was last counted over the whole folder; absent = never, the number is stale. */
+  labeledAt?: number;
+  /** Images marked reviewed (from .labeler_progress.json); shown on the project card. */
+  reviewed?: number;
   thumbs?: string[];
   fmt?: AnnotationFormat; // alias for sample data
   opened?: string;

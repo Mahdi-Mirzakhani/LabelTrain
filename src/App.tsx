@@ -21,6 +21,7 @@ import {
 import { clearThumbs } from "./lib/thumbs";
 import { normalizeAngle, toRad } from "./lib/obb";
 import { MIN_LOOK_MS, resumeIndex, stepProgress, type ListFilter, type Progress } from "./lib/progress";
+import { projectTitle } from "./lib/projects";
 import type {
   ClassDef, CmdItem, Density, ImageItem, LangCode, NBox, ObbSaveMode,
   ProjectInfo, ThemeMode, Toast, AnnotationFormat,
@@ -540,6 +541,7 @@ function AppShell() {
         lastOpenedAt: Date.now(),
         count: list.length,
         labeled: existing?.labeled ?? 0,
+        labeledAt: existing?.labeledAt,
       };
       setProject(meta);
       void window.api!.saveProject(meta).then(res => {
@@ -552,7 +554,7 @@ function AppShell() {
         console.warn("Could not persist recent project metadata", err);
       });
 
-      pushToast({ icon: "folder", msg: `Opened ${meta.name} — ${list.length} image${list.length === 1 ? "" : "s"}` });
+      pushToast({ icon: "folder", msg: `Opened ${projectTitle(meta.name, folder)} — ${list.length} image${list.length === 1 ? "" : "s"}` });
       if (resumed) {
         const names = new Set(list.map(im => im.name));
         const done = saved.reviewed.filter(n => names.has(n)).length;
@@ -704,6 +706,26 @@ function AppShell() {
     setProject(updated);
     void window.api!.saveProject(updated).catch(() => { /* best-effort */ });
   }, [classes]);
+
+  // Once every image has been read, the labelled count is exact: store it in
+  // the project file so the project list shows it (it used to show whatever
+  // was known at open time — usually 0). Debounced, so labelling an image
+  // writes the file once, not per box.
+  const allHydrated = images.length > 0 && images.every(im => im.hydrated);
+  const labeledNow = useMemo(() => images.filter(im => im.labeled).length, [images]);
+  useEffect(() => {
+    if (!inElectron || !allHydrated) return;
+    const p = projectRef.current;
+    if (!p || (p.labeledAt && p.labeled === labeledNow && p.count === images.length)) return;
+    const id = window.setTimeout(() => {
+      const cur = projectRef.current;
+      if (!cur || cur.id !== p.id) return;
+      const updated = { ...cur, labeled: labeledNow, count: images.length, labeledAt: Date.now() };
+      setProject(updated);
+      void window.api!.saveProject(updated).catch(() => { /* best-effort */ });
+    }, 1500);
+    return () => window.clearTimeout(id);
+  }, [allHydrated, labeledNow, images.length]);
 
   const switchProject = useCallback(async (p: ProjectInfo) => {
     setProjMenu(false);
@@ -1277,8 +1299,8 @@ function AppShell() {
           <span className="mark"><Icon name="scan" size={14} /></span>
         </div>
         <div className="nodrag" style={{ position: "relative" }}>
-          <button className="proj-switch" onClick={() => setProjMenu(v => !v)}>
-            <span className="t-body-strong">{project?.name ?? "—"}</span>
+          <button className="proj-switch" onClick={() => setProjMenu(v => !v)} title={project?.imageDir}>
+            <span className="t-body-strong">{project ? projectTitle(project.name, project.imageDir) : "—"}</span>
             <Icon name="chevDown" size={14} />
           </button>
           {projMenu && (
