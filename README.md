@@ -196,7 +196,7 @@ made, say — takes more than one sitting. The file list keeps track:
 | Mark | Meaning |
 | --- | --- |
 | green tick (top) | the image has labels |
-| purple eye (bottom) | you have looked at the image and moved on to another |
+| purple eye (bottom) | you looked at the image for at least 0.4 s and moved on to another |
 | orange bookmark | where the previous session stopped |
 
 Reopening the folder lands on the image you were on last, with a toast saying
@@ -204,6 +204,8 @@ how many of the folder's images are reviewed; the footer keeps that count too.
 **Filter → Not reviewed** leaves only what is still to do. The image you land
 on is not marked until you leave it, and the bookmark stays where the last
 session ended while you work, so it always shows how far the review had got.
+Images you fly past by holding an arrow key (under 0.4 s on screen each,
+`MIN_LOOK_MS`) count as skipped, not reviewed.
 
 The marks live in `.labeler_progress.json` beside the images (file names, so
 they survive files being added or removed), not in `.labeler_project.json`,
@@ -260,6 +262,7 @@ width. See `tests/phase7-obb.ts`.
 | `V` | Pointer tool |
 | `B` | Box tool |
 | `N` / `P` | Next / Previous image |
+| `→` `↓` / `←` `↑` | Next / Previous image *(Annotate tab)* |
 | `Del` / `Backspace` | Delete selected box |
 | `Esc` | Deselect |
 | `1`–`9` | Set active class |

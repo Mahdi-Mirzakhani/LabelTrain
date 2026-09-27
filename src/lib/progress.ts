@@ -9,6 +9,13 @@ export interface Progress {
   last: string | null;
 }
 
+/**
+ * How long an image must stay on screen to count as looked at. Holding an
+ * arrow key flies past images at the keyboard's repeat rate (~30 a second);
+ * those were skipped, not reviewed.
+ */
+export const MIN_LOOK_MS = 400;
+
 /** File-list filters: the labelling status plus the review status. */
 export type ListFilter = "all" | "labeled" | "unlabeled" | "reviewed" | "unreviewed";
 

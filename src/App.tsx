@@ -20,7 +20,7 @@ import {
 } from "./settings-store";
 import { clearThumbs } from "./lib/thumbs";
 import { normalizeAngle, toRad } from "./lib/obb";
-import { resumeIndex, stepProgress, type ListFilter, type Progress } from "./lib/progress";
+import { MIN_LOOK_MS, resumeIndex, stepProgress, type ListFilter, type Progress } from "./lib/progress";
 import type {
   ClassDef, CmdItem, Density, ImageItem, LangCode, NBox, ObbSaveMode,
   ProjectInfo, ThemeMode, Toast, AnnotationFormat,
@@ -350,15 +350,19 @@ function AppShell() {
   const saveProgressRef = useRef(saveProgressNow);
   saveProgressRef.current = saveProgressNow;
 
-  // Moving to another image marks the one left behind as reviewed.
+  // Moving to another image marks the one left behind as reviewed, if it was on
+  // screen long enough to have been looked at (MIN_LOOK_MS).
   const curName = cur?.name ?? null;
+  const arrivedAt = useRef(0);
   useEffect(() => {
     if (!curName) return;
     const prev = prevNameRef.current;
+    const looked = performance.now() - arrivedAt.current >= MIN_LOOK_MS;
     prevNameRef.current = curName;
+    arrivedAt.current = performance.now();
     setProgress(p => {
       if (!p) return p;
-      const next = stepProgress(p, prev, curName);
+      const next = stepProgress(p, looked ? prev : null, curName);
       if (next !== p) progressDirty.current = true;
       return next;
     });
@@ -1195,6 +1199,11 @@ function AppShell() {
       else if (k === "b") setTool("box");
       else if (k === "n") go(1);
       else if (k === "p") go(-1);
+      // Arrow keys follow the arrows on screen: → / ↓ next, ← / ↑ previous
+      // (↓ is also "the next row" in the file list). Annotate only, and
+      // preventDefault so the list and canvas don't scroll as well.
+      else if (tab === "annotate" && (e.key === "ArrowRight" || e.key === "ArrowDown")) { e.preventDefault(); go(1); }
+      else if (tab === "annotate" && (e.key === "ArrowLeft" || e.key === "ArrowUp")) { e.preventDefault(); go(-1); }
       else if (e.key === "Delete" || e.key === "Backspace") deleteSel();
       else if (e.key === "Escape") setSelId(null);
       else if (tab === "annotate" && /^[1-9]$/.test(e.key)) {
@@ -1329,12 +1338,14 @@ function AppShell() {
           <div className="workspace">
             <div className="wsbar">
               <div className="row gap-md">
-                <button className="iconbtn" onClick={() => go(-1)} disabled={curIdx === 0}><Icon name="chevLeft" size={18} /></button>
+                <button className="iconbtn" onClick={() => go(-1)} disabled={curIdx === 0}
+                  title={`${t("Previous image")} (P, ←)`}><Icon name="chevLeft" size={18} /></button>
                 <div className="col" style={{ alignItems: "center" }}>
                   <span className="t-body-strong mono">{cur ? cur.name : "—"}</span>
                   <span className="t-caption tnum">{curIdx + 1} {t("of")} {images.length}</span>
                 </div>
-                <button className="iconbtn" onClick={() => go(1)} disabled={curIdx >= images.length - 1}><Icon name="chevRight" size={18} /></button>
+                <button className="iconbtn" onClick={() => go(1)} disabled={curIdx >= images.length - 1}
+                  title={`${t("Next image")} (N, →)`}><Icon name="chevRight" size={18} /></button>
               </div>
               <div className="row gap-sm">
                 <button className="btn btn-secondary sm" onClick={() => setAutoLabel(true)}>
