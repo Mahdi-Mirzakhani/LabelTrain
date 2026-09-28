@@ -397,6 +397,27 @@ storage and `cv2.minAreaRect` recovers the angle. Round-tripping is exact for
 files this app wrote, because the corner ORDER identifies which side is the
 width. See `tests/phase7-obb.ts`.
 
+## Motion
+
+Everything that moves is short (0.14–0.5 s) and never waits on you:
+
+- a pill slides behind the chosen tab and behind the chosen option of every
+  segmented control (`useSlidingIndicator` in `src/components/ui.tsx`);
+- each tab's page fades in; cards, KPIs, model choices and scan steps arrive
+  one after another; KPI numbers count up (`CountUp`) and bars grow;
+- buttons shrink a little when pressed, cards lift on hover, ticks, switches and
+  the keep/drop badges spring; a finished scan step pops;
+- switching the theme grows the new one in a circle from the toggle (View
+  Transitions API), with every other transition held until it is done. Text
+  colour is left out of the global transition on purpose: it is inherited, so
+  each level chased its parent's fading colour and deep text took seconds to
+  settle.
+
+When Windows asks for less motion (Settings › Accessibility › Visual effects ›
+Animation effects off), all of it is off: the CSS under "Motion" in
+`src/styles.css` drops every animation and transition to 1 ms, and numbers
+and the theme switch change at once.
+
 ## Keyboard shortcuts
 
 | Key | Action |

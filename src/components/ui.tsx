@@ -1,5 +1,5 @@
-import { useState, useRef, useCallback, useEffect } from "react";
-import type { CSSProperties, ReactNode } from "react";
+import { useState, useRef, useCallback, useEffect, useLayoutEffect } from "react";
+import type { CSSProperties, ReactNode, RefObject } from "react";
 import { Icon } from "./Icon";
 import { placeholder } from "../data";
 import { cachedThumb, getThumb } from "../lib/thumbs";
@@ -34,14 +34,68 @@ interface SegmentedProps<T extends string> {
   onChange: (v: T) => void;
 }
 export function Segmented<T extends string>({ value, options, onChange }: SegmentedProps<T>) {
+  const ref = useRef<HTMLDivElement>(null);
+  const ind = useSlidingIndicator(ref, "button.on", [value, options.map(o => o.value).join("|")]);
   return (
-    <div className="seg" role="tablist">
+    <div className={"seg" + (ind ? " has-ind" : "")} role="tablist" ref={ref}>
+      {ind && <span className="seg-ind" style={{ width: ind.w, transform: `translateX(${ind.x}px)` }} />}
       {options.map(o => (
         <button key={o.value} className={value === o.value ? "on" : ""} role="tab"
           aria-selected={value === o.value} onClick={() => onChange(o.value)}>{o.label}</button>
       ))}
     </div>
   );
+}
+
+// ---------------------------------------------------------------- motion
+
+/** True when the system asks for less motion; the CSS turns its animations off then too. */
+export const prefersReducedMotion = (): boolean =>
+  typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+
+/**
+ * Where the chosen child of a strip sits (`selector`, e.g. "button.on"), so a
+ * pill behind the items can slide to it. Measured again whenever `deps`
+ * change or the strip resizes — including when a hidden tab shows again.
+ */
+export function useSlidingIndicator(ref: RefObject<HTMLElement | null>, selector: string, deps: unknown[]) {
+  const [ind, setInd] = useState<{ x: number; w: number } | null>(null);
+  useLayoutEffect(() => {
+    const box = ref.current;
+    if (!box) return;
+    const measure = () => {
+      const el = box.querySelector<HTMLElement>(selector);
+      setInd(el && el.offsetWidth ? { x: el.offsetLeft, w: el.offsetWidth } : null);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(box);
+    return () => ro.disconnect();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps);
+  return ind;
+}
+
+/** A number that counts to its value: from 0 when it first shows, then from wherever it was. */
+export function CountUp({ value, format = (n: number) => n.toLocaleString(), ms = 650 }: {
+  value: number; format?: (n: number) => string; ms?: number;
+}) {
+  const [shown, setShown] = useState(() => (prefersReducedMotion() ? value : 0));
+  const cur = useRef(shown);
+  useEffect(() => {
+    const from = cur.current;
+    if (from === value || prefersReducedMotion()) { cur.current = value; setShown(value); return; }
+    const t0 = performance.now();
+    let raf = requestAnimationFrame(function tick(now) {
+      const k = Math.min(1, (now - t0) / ms);
+      const v = from + (value - from) * (1 - Math.pow(1 - k, 3));
+      cur.current = v;
+      setShown(v);
+      if (k < 1) raf = requestAnimationFrame(tick);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [value, ms]);
+  return <>{format(Math.round(shown))}</>;
 }
 
 interface SliderProps {

@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Icon } from "./Icon";
-import { Checkbox, CodeBlock, Img, Pill, Slider, Switch, Thumb } from "./ui";
+import { Checkbox, CodeBlock, CountUp, Img, Pill, Slider, Switch, Thumb } from "./ui";
 import { t } from "../i18n";
 import { TRAIN_PROFILES } from "../data";
 import { classDistribution, datasetHealth, filterRows } from "../lib/dataset";
@@ -45,9 +45,9 @@ export function DatasetRoute({ images, classes, classColor, openImage, onExport 
   const health = useMemo(() => datasetHealth(images), [images]);
 
   const kpis = [
-    { num: total.toLocaleString(), lbl: t("Total images"), trend: `${labeled} labeled` },
-    { num: labeled.toLocaleString(), lbl: t("Labeled"), trend: `${total ? Math.round(labeled / total * 100) : 0}% complete` },
-    { num: anns.toLocaleString(), lbl: t("Annotations"), trend: labeled ? `${(anns / labeled).toFixed(1)} avg / image` : "—" },
+    { num: total, lbl: t("Total images"), trend: `${labeled} labeled` },
+    { num: labeled, lbl: t("Labeled"), trend: `${total ? Math.round(labeled / total * 100) : 0}% complete` },
+    { num: anns, lbl: t("Annotations"), trend: labeled ? `${(anns / labeled).toFixed(1)} avg / image` : "—" },
     { num: classes.length, lbl: t("Classes"), trend: `${classDist.length} in use` },
   ];
 
@@ -100,7 +100,7 @@ export function DatasetRoute({ images, classes, classColor, openImage, onExport 
           <div className="kpi-grid">
             {kpis.map(k => (
               <div className="kpi" key={k.lbl}>
-                <div className="num tnum">{k.num}</div>
+                <div className="num tnum"><CountUp value={k.num} /></div>
                 <div className="lbl">{k.lbl}</div>
                 <div className="t-caption" style={{ marginTop: 8, color: "var(--success)" }}>{k.trend}</div>
               </div>

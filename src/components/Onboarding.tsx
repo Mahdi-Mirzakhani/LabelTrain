@@ -62,7 +62,7 @@ export function Onboarding({ onDone, onFolder }: OnboardingProps) {
   const s = slides[step];
   return (
     <div className="fullscreen">
-      <div className="ob-slide">
+      <div className="ob-slide" key={step}>
         <div style={{
           width: 104, height: 104, borderRadius: 28,
           background: "linear-gradient(135deg,var(--primary-hover),var(--primary-active))",

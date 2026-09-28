@@ -125,7 +125,9 @@ body{
   text-rendering:optimizeLegibility;
   overflow:hidden;
 }
-*{transition:background-color .25s ease, border-color .25s ease, color .25s ease;}
+/* not `color`: it is inherited, so every level would chase its parent's fading
+   colour and deep text would take seconds to settle after a theme switch */
+*{transition:background-color .25s ease, border-color .25s ease;}
 button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
 input,textarea,select{font-family:inherit;color:inherit}
 ::selection{background:var(--selection)}
@@ -671,3 +673,114 @@ input[type=range].native::-webkit-slider-runnable-track{height:4px;border-radius
 .dup-step.now .dup-step-title{color:var(--text);font-weight:600}
 .dup-step.wait{opacity:.55}
 .dup-scan-foot{display:flex;align-items:center;gap:6px;padding:var(--sp-md);border-radius:var(--r-md);background:var(--surface)}
+
+/* ============================================================
+   Motion — short and never in the way. Every entrance only fades and
+   rises a few pixels, presses shrink a little, and a pill slides behind
+   the chosen tab or option. All of it is off when Windows asks for less
+   motion (Settings › Accessibility › Visual effects › Animation effects).
+   ============================================================ */
+:root{--ease-out:cubic-bezier(.2,.8,.2,1);--ease-spring:cubic-bezier(.34,1.56,.64,1);--d-fast:.14s;--d-med:.24s;--d-slow:.36s}
+
+@keyframes viewIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@keyframes riseIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@keyframes popIn{from{opacity:0;transform:scale(.5)}to{opacity:1;transform:scale(1)}}
+@keyframes markPop{0%{transform:scale(.3)}60%{transform:scale(1.18)}100%{transform:scale(1)}}
+@keyframes ringPulse{0%{box-shadow:inset 0 0 0 2px var(--primary),0 0 0 0 color-mix(in srgb,var(--primary) 45%,transparent)}100%{box-shadow:inset 0 0 0 2px var(--primary),0 0 0 8px transparent}}
+@keyframes menuIn{from{opacity:0;transform:translateY(-4px) scale(.98)}to{opacity:1;transform:none}}
+@keyframes ttIn{from{opacity:0;transform:translate(-50%,-3px)}to{opacity:1;transform:translate(-50%,0)}}
+@keyframes spinIn{from{opacity:0;transform:rotate(-120deg) scale(.5)}to{opacity:1;transform:none}}
+@keyframes barIn{from{transform:scaleY(0)}to{transform:scaleY(1)}}
+@keyframes growX{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+@keyframes growY{from{transform:scaleY(0)}to{transform:scaleY(1)}}
+@keyframes sideIn{from{opacity:0;transform:translateX(14px)}to{opacity:1;transform:none}}
+@keyframes sideInRtl{from{opacity:0;transform:translateX(-14px)}to{opacity:1;transform:none}}
+
+/* each tab's page comes in softly — also the kept-alive Duplicates tab when it shows again */
+.app>.body,.fullscreen{animation:viewIn var(--d-slow) var(--ease-out) backwards}
+
+/* one pill slides behind the chosen tab / option (see useSlidingIndicator) */
+.tabs-top{position:relative}
+.tab-top{z-index:1}
+.tab-ind,.seg-ind{position:absolute;left:0;border-radius:var(--r-sm);background:var(--surface);box-shadow:var(--e1);pointer-events:none;
+  transition:transform var(--d-slow) var(--ease-out),width var(--d-slow) var(--ease-out),background-color .25s ease}
+.tab-ind{top:3px;height:28px}
+.tabs-top.has-ind .tab-top.active{background:transparent;box-shadow:none}
+.seg{position:relative}
+.seg button{position:relative;z-index:1}
+.seg-ind{top:3px;bottom:3px}
+.seg.has-ind button.on{background:transparent;box-shadow:none}
+
+/* presses shrink a little, cards lift on hover */
+.btn,.iconbtn,.tab-top,.seg button,.chip,.menu-item,.dup-model,.pm-card,.cbx{
+  transition-property:background-color,border-color,color,box-shadow,opacity,transform,filter;
+  transition-duration:var(--d-fast);transition-timing-function:var(--ease-out)}
+.btn:active:not([disabled]),.iconbtn:active,.tab-top:active,.seg button:active,.chip:active,.menu-item:active{transform:scale(.96)}
+.cbx:active{transform:scale(.88)}
+.dup-model:hover:not(.off){transform:translateY(-2px);box-shadow:inset 0 0 0 1px var(--border-strong),var(--e2)}
+.dup-model.on:hover{box-shadow:inset 0 0 0 2px var(--primary),var(--e2)}
+.dup-model:active:not(.off){transform:translateY(0) scale(.985)}
+.pm-card:active{transform:translateY(-2px) scale(.985)}
+.pm-new svg{transition:transform var(--d-med) var(--ease-spring)}
+.pm-new:hover svg{transform:rotate(90deg)}
+
+/* ticks and switches spring */
+.cbx.on svg{animation:popIn var(--d-med) var(--ease-spring)}
+.switch i{transition:transform var(--d-med) var(--ease-spring)}
+.theme-ic{animation:spinIn .45s var(--ease-spring)}
+
+/* cards and lists arrive one after another */
+:is(.pm-grid,.kpi-grid,.dup-kpis,.dup-models,.dup-cards,.dup-steps,.dup-intro,.dup-none)>*{animation:riseIn var(--d-slow) var(--ease-out) backwards}
+:is(.pm-grid,.kpi-grid,.dup-kpis,.dup-models,.dup-cards,.dup-steps,.dup-intro,.dup-none)>:nth-child(2){animation-delay:.04s}
+:is(.pm-grid,.kpi-grid,.dup-kpis,.dup-models,.dup-cards,.dup-steps,.dup-intro,.dup-none)>:nth-child(3){animation-delay:.08s}
+:is(.pm-grid,.kpi-grid,.dup-kpis,.dup-models,.dup-cards,.dup-steps,.dup-intro,.dup-none)>:nth-child(4){animation-delay:.12s}
+:is(.pm-grid,.kpi-grid,.dup-kpis,.dup-models,.dup-cards,.dup-steps,.dup-intro,.dup-none)>:nth-child(5){animation-delay:.16s}
+:is(.pm-grid,.kpi-grid,.dup-kpis,.dup-models,.dup-cards,.dup-steps,.dup-intro,.dup-none)>:nth-child(6){animation-delay:.2s}
+:is(.pm-grid,.kpi-grid,.dup-kpis,.dup-models,.dup-cards,.dup-steps,.dup-intro,.dup-none)>:nth-child(7){animation-delay:.24s}
+:is(.pm-grid,.kpi-grid,.dup-kpis,.dup-models,.dup-cards,.dup-steps,.dup-intro,.dup-none)>:nth-child(n+8){animation-delay:.28s}
+.ob-slide{animation:riseIn var(--d-slow) var(--ease-out)}
+.ob-dot{transition:width var(--d-slow) var(--ease-out),background-color var(--d-slow) ease}
+
+/* bars grow from their base */
+.bar{transform-origin:bottom;animation:growY .55s var(--ease-out) backwards}
+.bar-col:nth-child(2) .bar{animation-delay:.05s}.bar-col:nth-child(3) .bar{animation-delay:.1s}
+.bar-col:nth-child(4) .bar{animation-delay:.15s}.bar-col:nth-child(n+5) .bar{animation-delay:.2s}
+.pm-stat-bar>span,.gauge-bar>i{transform-origin:left;animation:growX .6s var(--ease-out) backwards}
+[dir="rtl"] .pm-stat-bar>span,[dir="rtl"] .gauge-bar>i{transform-origin:right}
+.prog>i{transition:width .4s var(--ease-out)}
+.dup-progress-bar>div{transition:width .3s var(--ease-out)}
+
+/* Annotate: the active row's bar grows in, the inspector slides in */
+.file-row.active::before{animation:barIn var(--d-med) var(--ease-out)}
+.inspector{animation:sideIn var(--d-med) var(--ease-out) backwards}
+[dir="rtl"] .inspector{animation-name:sideInRtl}
+
+/* Duplicates: steps spring when done, the running one breathes; the keep/drop badge pops */
+.dup-step:not(:last-child)::after{transition:background-color var(--d-slow) var(--ease-out)}
+.dup-step.done .dup-step-mark{animation:markPop .42s var(--ease-spring)}
+.dup-step.now .dup-step-mark{animation:ringPulse 1.4s ease-out infinite}
+.dup-summary,.dup-controls{animation:viewIn var(--d-med) var(--ease-out) backwards}
+.dup-badge{animation:popIn var(--d-med) var(--ease-spring)}
+.dup-card{transition:box-shadow var(--d-med) var(--ease-out)}
+.dup-card-img img{transition:opacity var(--d-med) ease}
+.dup-row.active{box-shadow:inset 3px 0 0 var(--primary)}
+[dir="rtl"] .dup-row.active{box-shadow:inset -3px 0 0 var(--primary)}
+
+/* overlays: one easing for all of them */
+.scrim{animation:fade var(--d-med) ease}
+.modal,.cmdk{animation:pop var(--d-med) var(--ease-out)}
+.drawer{animation:slideR .28s var(--ease-out)}
+[dir="rtl"] .drawer{animation:slideL .28s var(--ease-out)}
+.dropmenu{transform-origin:top;animation:menuIn var(--d-fast) var(--ease-out)}
+.tt{animation:ttIn var(--d-fast) var(--ease-out)}
+.toast{animation:slideUp .32s var(--ease-spring)}
+.toast .ticon{animation:popIn .4s var(--ease-spring) .08s backwards}
+
+/* theme switch: a circle grows from the toggle; nothing else moves meanwhile */
+::view-transition-old(root),::view-transition-new(root){animation:none;mix-blend-mode:normal}
+::view-transition-new(root){z-index:2}
+.theme-switching *,.theme-switching *::before,.theme-switching *::after{transition:none!important}
+
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-duration:1ms!important;animation-delay:0s!important;animation-iteration-count:1!important;transition-duration:1ms!important}
+}

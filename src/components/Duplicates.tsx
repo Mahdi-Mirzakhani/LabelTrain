@@ -8,7 +8,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "./Icon";
-import { Checkbox, Segmented, Slider } from "./ui";
+import { Checkbox, CountUp, Segmented, Slider } from "./ui";
 import { t } from "../i18n";
 import { inElectron, pathToAppUrl } from "../ipc";
 import {
@@ -598,10 +598,10 @@ export function DuplicatesRoute({
             )}
 
             <div className="dup-kpis">
-              <div className="kpi"><div className="num tnum">{groups.length.toLocaleString()}</div><div className="lbl">{t("groups")}</div></div>
-              <div className="kpi"><div className="num tnum">{toRemove.length.toLocaleString()}</div><div className="lbl">{t("images to move out")}</div></div>
-              <div className="kpi"><div className="num tnum" style={{ color: crossCount ? "var(--warning)" : undefined }}>{crossCount.toLocaleString()}</div><div className="lbl">{t("groups across splits")}</div></div>
-              <div className="kpi"><div className="num tnum">{bytesText(freed)}</div><div className="lbl">{t("freed")}</div></div>
+              <div className="kpi"><div className="num tnum"><CountUp value={groups.length} /></div><div className="lbl">{t("groups")}</div></div>
+              <div className="kpi"><div className="num tnum"><CountUp value={toRemove.length} /></div><div className="lbl">{t("images to move out")}</div></div>
+              <div className="kpi"><div className="num tnum" style={{ color: crossCount ? "var(--warning)" : undefined }}><CountUp value={crossCount} /></div><div className="lbl">{t("groups across splits")}</div></div>
+              <div className="kpi"><div className="num tnum"><CountUp value={freed} format={bytesText} /></div><div className="lbl">{t("freed")}</div></div>
             </div>
 
             <div className="dup-main">
@@ -842,7 +842,7 @@ function DupCard({ i, items, splitOf, facts, showLabels, classColor, keep, index
             borderColor: classColor(b.cls),
           }} />
         ))}
-        <span className={"dup-badge " + (keep ? "keep" : "drop")}>{index + 1} · {keep ? (fa ? "می‌ماند" : "KEEP") : (fa ? "بیرون" : "MOVE OUT")}</span>
+        <span key={keep ? "keep" : "drop"} className={"dup-badge " + (keep ? "keep" : "drop")}>{index + 1} · {keep ? (fa ? "می‌ماند" : "KEEP") : (fa ? "بیرون" : "MOVE OUT")}</span>
       </div>
       <div className="dup-card-meta">
         <div className="dup-card-name" title={it.path}>{name}</div>

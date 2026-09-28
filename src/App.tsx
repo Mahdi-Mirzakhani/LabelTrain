@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { Icon } from "./components/Icon";
-import { Tip } from "./components/ui";
+import { Tip, prefersReducedMotion, useSlidingIndicator } from "./components/ui";
 import {
   CommandPalette, AutoLabelModal, SplitModal, ClassManagerDrawer,
   SettingsDrawer, BoxContextMenu, ToastHost, SystemDrawer, ObbWarningModal,
@@ -175,6 +176,32 @@ function AppShell() {
   }, [theme, density, fmt, device, lang, outputDir, seenOnboarding, obb, obbSave]);
 
   useEffect(() => { document.documentElement.dataset.theme = theme; }, [theme]);
+  /**
+   * Switch the theme with a circle that grows from `from` (the toggle's
+   * centre) through the View Transitions API; a plain switch where that is
+   * missing or the system asks for less motion. Transitions are off while it
+   * runs, so the new theme is revealed already settled.
+   */
+  const changeTheme = useCallback((next: ThemeMode, from?: { x: number; y: number }) => {
+    const doc = document as Document & {
+      startViewTransition?: (cb: () => void) => { ready: Promise<void>; finished: Promise<void> };
+    };
+    if (next === theme) return;
+    if (!doc.startViewTransition || prefersReducedMotion()) { setTheme(next); return; }
+    const root = document.documentElement;
+    root.classList.add("theme-switching");
+    const vt = doc.startViewTransition(() => {
+      root.dataset.theme = next;
+      flushSync(() => setTheme(next));
+    });
+    const x = from?.x ?? window.innerWidth / 2, y = from?.y ?? window.innerHeight / 2;
+    const r = Math.hypot(Math.max(x, window.innerWidth - x), Math.max(y, window.innerHeight - y));
+    vt.ready.then(() => {
+      root.animate({ clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${r}px at ${x}px ${y}px)`] },
+        { duration: 520, easing: "cubic-bezier(.2,.8,.2,1)", pseudoElement: "::view-transition-new(root)" });
+    }).catch(() => { /* skipped: the theme is switched anyway */ });
+    vt.finished.finally(() => root.classList.remove("theme-switching")).catch(() => {});
+  }, [theme]);
   useEffect(() => { document.documentElement.dataset.density = density; }, [density]);
   useEffect(() => {
     document.documentElement.dataset.lang = lang;
@@ -1256,7 +1283,7 @@ function AppShell() {
       { id: "delete-image", group: "Actions", icon: "trash", label: "Delete image and its labels", kw: "remove recycle bin trash", keys: ["⌘", "Del"], run: () => { void deleteImage(); } },
       { id: "undo", group: "Actions", icon: "arrowLeft", label: "Undo", keys: ["⌘", "Z"], run: undo },
       { id: "redo", group: "Actions", icon: "arrowRight", label: "Redo", keys: ["⌘", "⇧", "Z"], run: redo },
-      { id: "theme", group: "Settings", icon: theme === "dark" ? "sun" : "moon", label: `Switch to ${theme === "dark" ? "light" : "dark"} theme`, run: () => setTheme(theme === "dark" ? "light" : "dark") },
+      { id: "theme", group: "Settings", icon: theme === "dark" ? "sun" : "moon", label: `Switch to ${theme === "dark" ? "light" : "dark"} theme`, run: () => changeTheme(theme === "dark" ? "light" : "dark") },
       { id: "lang", group: "Settings", icon: "info", label: "Switch language", kw: "persian farsi", run: () => setLang(lang === "en" ? "fa" : "en") },
       { id: "density", group: "Settings", icon: "layers", label: "Cycle density", run: () => setDensity(({ comfortable: "compact", compact: "spacious", spacious: "comfortable" } as const)[density]) },
       { id: "settings", group: "Settings", icon: "settings", label: "Open settings", run: () => setSettings(true) },
@@ -1361,6 +1388,10 @@ function AppShell() {
       obb, selId, setBoxes]);
 
   // ---- Routes ----
+  // the pill behind the active tab slides to it
+  const tabsRef = useRef<HTMLDivElement>(null);
+  const tabInd = useSlidingIndicator(tabsRef, ".tab-top.active", [tab, lang, screen]);
+
   if (screen === "onboarding") {
     return (
       <>
@@ -1438,7 +1469,8 @@ function AppShell() {
         </div>
 
         <div className="grow" style={{ display: "flex", justifyContent: "center" }}>
-          <div className="tabs-top nodrag">
+          <div className={"tabs-top nodrag" + (tabInd ? " has-ind" : "")} ref={tabsRef}>
+            {tabInd && <span className="tab-ind" style={{ width: tabInd.w, transform: `translateX(${tabInd.x}px)` }} />}
             {TABS.map(tt => (
               <button key={tt.id} className={"tab-top" + (tab === tt.id ? " active" : "")}
                 onClick={() => setTab(tt.id)}>
@@ -1461,8 +1493,11 @@ function AppShell() {
             <button className="iconbtn" onClick={() => setAutoLabel(true)}><Icon name="sparkles" size={17} /></button>
           </Tip>
           <Tip label={theme === "dark" ? t("Light theme") : t("Dark theme")}>
-            <button className="iconbtn" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
-              <Icon name={theme === "dark" ? "sun" : "moon"} size={17} />
+            <button className="iconbtn" onClick={(e) => {
+              const r = e.currentTarget.getBoundingClientRect();
+              changeTheme(theme === "dark" ? "light" : "dark", { x: r.left + r.width / 2, y: r.top + r.height / 2 });
+            }}>
+              <Icon key={theme} name={theme === "dark" ? "sun" : "moon"} size={17} className="theme-ic" />
             </button>
           </Tip>
           <Tip label={t("Settings")}>
@@ -1623,7 +1658,7 @@ function AppShell() {
       )}
       {settings && (
         <SettingsDrawer onClose={() => setSettings(false)}
-          theme={theme} setTheme={setTheme}
+          theme={theme} setTheme={(v) => changeTheme(v)}
           density={density} setDensity={setDensity}
           fmt={fmt} setFmt={(v) => setFmt(v as AnnotationFormat)}
           device={device} setDevice={setDevice}
