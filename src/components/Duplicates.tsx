@@ -74,6 +74,8 @@ export function DuplicatesRoute({
   const [run, setRun] = useState<Run | null>(null);
   const [now, setNow] = useState(Date.now());
   const [scanError, setScanError] = useState<string | null>(null);
+  /** Back on the method picker with a result still kept, to scan another way or return to it. */
+  const [picking, setPicking] = useState(false);
   const [scan, setScan] = useState<Scan | null>(null);
   const [presetName, setPresetName] = useState<Preset>("frames");
   const [sens, setSens] = useState<Sensitivity>(preset("frames"));
@@ -183,6 +185,7 @@ export function DuplicatesRoute({
     setAlign(alignOn);
     setScanError(null);
     cancelLabels.current = false;
+    setPicking(false);
     const started = Date.now();
     const guess = counted !== null ? estimateSeconds(counted, withModel, alignOn, {
       hashes: !!cacheInfo?.hashes, model: !!cacheInfo?.models.includes(withModel), align: !!cacheInfo?.align.includes(withModel),
@@ -387,14 +390,16 @@ export function DuplicatesRoute({
     await removeGroups(groups);
   }, [toRemove, groups, fa, root, removeGroups]);
 
-  // ---- keyboard: J/K or ↓/↑ groups, 1-9 keep only, Enter remove, I not duplicates, C compare, L labels, Ctrl+Z undo
+  // ---- keyboard: J/K or ↓/↑ groups, 1-9 keep only, Enter remove, I not duplicates, C compare, L labels, Ctrl+Z undo,
+  //      Esc back from the method picker to the results
   useEffect(() => {
     if (!active) return;
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target instanceof HTMLElement ? e.target.tagName : "").toLowerCase();
       if (tag === "input" || tag === "textarea" || tag === "select") return;
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") { e.preventDefault(); void undo(); return; }
-      if (e.ctrlKey || e.metaKey || e.altKey || !scan) return;
+      if (e.key === "Escape" && picking && scan && !run) { setPicking(false); return; }
+      if (e.ctrlKey || e.metaKey || e.altKey || !scan || picking || run) return;
       const k = e.key.toLowerCase();
       if (k === "j" || e.key === "ArrowDown") { e.preventDefault(); if (groups[selIdx + 1]) setSelId(groups[selIdx + 1].id); }
       else if (k === "k" || e.key === "ArrowUp") { e.preventDefault(); if (groups[selIdx - 1]) setSelId(groups[selIdx - 1].id); }
@@ -492,11 +497,14 @@ export function DuplicatesRoute({
               }}>
                 <Icon name="x" size={14} />{t("Cancel")}
               </button>
-            ) : scan && (
+            ) : scan && !picking && (<>
+              <button className="btn btn-secondary sm" onClick={() => setPicking(true)} title={t("Pick another way to look, and scan again")}>
+                <Icon name="arrowLeft" size={14} className="rtl-flip" />{t("Change method")}
+              </button>
               <button className="btn btn-primary sm" onClick={() => void runScan()} disabled={!scope}>
                 <Icon name="scan" size={14} />{t("Rescan")}
               </button>
-            )}
+            </>)}
           </div>
         </div>
 
@@ -505,7 +513,7 @@ export function DuplicatesRoute({
         {run ? (
           <ScanProgress run={run} now={now} fa={fa} modelName={modelName} scopeText={
             scope && whole && scope.splits.length ? scope.splits.map(s => s.name).join(" · ") : t("This folder")} />
-        ) : !scan ? (
+        ) : !scan || picking ? (
           <div className="dup-intro">
             <div className="dup-intro-top">
               <Icon name="copy" size={34} />
@@ -521,6 +529,12 @@ export function DuplicatesRoute({
                 <Icon name="scan" size={16} />{t("Scan for duplicates")}
               </button>
               {estimate !== null && <span className="t-body tsec">{counted!.toLocaleString()} {t("images")} · {durationText(estimate, fa)}</span>}
+              {scan && (
+                <button className="btn btn-ghost dup-back" onClick={() => setPicking(false)} title="Esc">
+                  <Icon name="arrowLeft" size={14} className="rtl-flip" />{t("Back to the results")}
+                  <span className="t-caption">{scan.label} · {scan.result.items.length.toLocaleString()} {t("images")}</span>
+                </button>
+              )}
             </div>
           </div>
         ) : (
@@ -608,6 +622,9 @@ export function DuplicatesRoute({
                     <div className="dup-none">
                       <Icon name="checkCircle" size={28} />
                       <b>{byLabels ? t("No two images share their size and boxes") : t("No duplicates at this sensitivity")}</b>
+                      <button className="btn btn-secondary sm" onClick={() => setPicking(true)}>
+                        <Icon name="arrowLeft" size={13} className="rtl-flip" />{t("Choose another method")}
+                      </button>
                       {(stronger.length > 0 || canAlign) && <span>{t("A stronger model may find what this one missed:")}</span>}
                       {stronger.map(m => (
                         <button key={m} className="btn btn-secondary sm" onClick={() => void runScan(m, align)}>

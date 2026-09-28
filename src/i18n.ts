@@ -100,6 +100,8 @@ const FA: Record<string, string> = {
   "Compare the boxes of images with the same size and box count": "مقایسهٔ کادرهای عکس‌های هم‌اندازه و هم‌تعداد",
   "pairs you marked “Not duplicates” are hidden": "جفتی که «تکراری نیستند» زده بودید پنهان است",
   "You can switch to another tab — the scan keeps running.": "می‌توانید به تب دیگری بروید — اسکن ادامه پیدا می‌کند.",
+  "Change method": "تغییر روش", "Pick another way to look, and scan again": "روش دیگری انتخاب کنید و دوباره اسکن کنید",
+  "Back to the results": "برگشت به نتیجه‌ها", "Choose another method": "روش دیگری انتخاب کنید",
   "Review list": "فهرست بازبینی", "To review": "برای بازبینی", "All flagged": "همهٔ موارد مشکوک",
   "to review": "برای بازبینی", "flagged": "مشکوک", "Filter → To review": "فیلتر ← برای بازبینی",
   "Hints": "راهنما", "Show where the audit found a problem": "نشان دادن جای مشکل روی تصویر",

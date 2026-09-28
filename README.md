@@ -217,7 +217,9 @@ the whole dataset (train, valid, test) — and finds four kinds of repeat in the
 | Look-alike | cropped, zoomed, recoloured, the next frame of a video | cosine of ResNet50 or DINOv2 features (needs torch) |
 
 Before a scan you choose how hard to look; each step finds what the one
-before it missed, so when a scan finds nothing, the results offer the next one:
+before it missed, so when a scan finds nothing, the results offer the next one.
+**Change method**, beside **Rescan**, opens the choices again with the last one
+picked; **Back to the results** (`Esc`) returns without losing them.
 
 | Choice | Model | Finds |
 | --- | --- | --- |
