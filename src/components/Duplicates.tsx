@@ -95,6 +95,7 @@ export function DuplicatesRoute({
   const [scrollTop, setScrollTop] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
   const cancelLabels = useRef(false);
+  const lastIdx = useRef(0);          // index of the chosen group, see below
 
   const modelName = (m: DupMethod) => ({ none: t("Hashes only"), resnet50: "ResNet50", dinov2: "DINOv2", labels: t("Same labels") } as const)[m];
 
@@ -212,6 +213,7 @@ export function DuplicatesRoute({
       setKeepers(new Map());
       setFacts(loaded);
       setSelId(null);
+      lastIdx.current = 0;
       setKindFilter("all");
       const m = result.deep ? result.model : "none";
       setSens(s => presetName === "custom" ? { ...s, minCos: Math.max(MODELS[m].min, s.minCos) }
@@ -296,9 +298,15 @@ export function DuplicatesRoute({
   const freed = toRemove.reduce((s, i) => s + items[i].bytes, 0);
   const crossCount = useMemo(() => groups.filter(isCross).length, [groups, isCross]);
 
-  const selIdx = Math.max(0, groups.findIndex(g => g.id === selId));
+  const foundIdx = groups.findIndex(g => g.id === selId);
+  const selIdx = Math.max(0, foundIdx);
   const sel = groups[selIdx] ?? null;
-  useEffect(() => { if (groups.length && !groups.some(g => g.id === selId)) setSelId(groups[0].id); }, [groups, selId]);
+  // Where the chosen group was: when it leaves the list (moved out, "not duplicates"),
+  // the group that slides into its place — the next one — is chosen, not the first.
+  useEffect(() => { if (foundIdx >= 0) lastIdx.current = foundIdx; }, [foundIdx]);
+  useEffect(() => {
+    if (groups.length && foundIdx < 0) setSelId(groups[Math.min(lastIdx.current, groups.length - 1)].id);
+  }, [groups, foundIdx]);
   useEffect(() => { setFlickPhase(0); }, [selId]);
   useEffect(() => {
     if (!flicker || !active) return;
