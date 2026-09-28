@@ -638,6 +638,10 @@ input[type=range].native::-webkit-slider-runnable-track{height:4px;border-radius
 .dup-align .dup-model-head{justify-content:flex-start}
 .dup-model-name{font-size:13px;font-weight:600;color:var(--text)}
 .dup-cached{font-size:10px;font-weight:600;color:var(--success)}
+.dup-labels{width:100%}
+.dup-labels .dup-model-name{display:inline-flex;align-items:center;gap:6px}
+.dup-kind-labels{background:color-mix(in srgb,var(--info) 20%,transparent);color:var(--info)}
+.dup-cls-diff{font-size:10px;font-weight:600;color:var(--warning)}
 .dup-intro-go{display:flex;align-items:center;gap:var(--sp-lg);margin-top:var(--sp-md)}
 .dup-summary{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:var(--sp-sm);padding:var(--sp-sm) var(--sp-lg);font-size:12px;color:var(--text-secondary);border-bottom:1px solid var(--border)}
 .dup-summary>span:first-child{display:flex;align-items:center;gap:6px}

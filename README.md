@@ -207,7 +207,7 @@ The output directory is configurable in **Settings → Output directory**. Empty
 ## Duplicates
 
 **Duplicates** scans the open folder — or, when it is a YOLO split's `images/`,
-the whole dataset (train, valid, test) — and finds four kinds of repeat:
+the whole dataset (train, valid, test) — and finds four kinds of repeat in the pictures, or images whose labels are the same:
 
 | Kind | What | Measured by |
 | --- | --- | --- |
@@ -225,6 +225,31 @@ before it missed, so when a scan finds nothing, the results offer the next one:
 | Standard | ResNet50 (torchvision) | + look-alikes |
 | Strong | DINOv2 ViT-B/14 (timm, ~350 MB download the first time) | + tells a changed copy from a different photo best |
 | + Pixel alignment | on top of either model | + same photo, checked pixel by pixel against each image's 3 nearest neighbours |
+| Same labels | the label files | same size, same number of boxes, same corners (below) |
+
+### Same labels
+
+The last choice looks at the label files instead of the pictures. Two images
+count as duplicates when they have:
+
+- the same width and height,
+- the same number of boxes (images without boxes are skipped — otherwise every
+  empty image of one size would match), and
+- box for box, in any order, corners at most **1 px** apart. The slider (0–8 px)
+  changes that after the scan without reading anything again.
+
+Classes are not compared unless **Classes must match too** is on; a pair whose
+boxes agree but whose classes do not is marked **classes differ**, since one of
+the two label files is wrong. The scan reads only each image's header and its
+label file — through the same loaders as the Annotate tab, so every label
+format works — and needs no Python: 14,458 images take about 4 s once they are
+in the disk cache. It finds a copy saved under another name or re-exported with
+its labels whatever was done to its pixels; it also matches frames of a still
+camera whose boxes were copied from frame to frame, so compare a group side by
+side before moving it out. See `labelPairs` in `src/lib/dedup.ts`.
+
+The summary line counts the matching pairs hidden because you marked them
+**Not duplicates**, so an empty list is not taken for "none found".
 
 Standard needs the Auto-label Python with `torch` and `torchvision` (Ultralytics
 brings both), Strong also `pip install timm`, and pixel alignment OpenCV

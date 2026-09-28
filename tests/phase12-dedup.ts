@@ -10,7 +10,8 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { phase, check, eq, report } from "./_assert.ts";
 import {
-  PRESETS, clock, durationText, estimateSeconds, groupPairs, pairKind, preset, suggestKeeper, bytesText,
+  PRESETS, clock, durationText, estimateSeconds, groupPairs, labelPairs, matchBoxes, pairKind, preset, suggestKeeper, bytesText,
+  type LabelFacts,
 } from "../src/lib/dedup.ts";
 import {
   applyDedup, dedupCacheInfo, dedupScope, lastDedupBatch, loadNotDuplicates, runDedupScan, saveNotDuplicates, undoDedup,
@@ -62,6 +63,68 @@ phase("groupPairs unions chains, ranks groups and honours 'not duplicates'");
   eq(groupPairs(9, pairs, PRESETS.loose).length, 4, "loose adds the 0.91 pair");
   const cut = groupPairs(9, pairs, PRESETS.frames, (a, b) => a === 1 && b === 2);
   eq(cut.map(g => g.members), [[3, 4], [0, 1], [7, 8]], "marking 1-2 as not duplicates cuts the chain there");
+}
+
+phase("labelPairs: same size, same number of boxes, same corners — in any order");
+{
+  const b = (cls: string, x1: number, y1: number, x2: number, y2: number, r?: number) => ({ cls, x1, y1, x2, y2, r });
+  const two = [b("head", 10, 10, 50, 50), b("helmet", 100, 100, 150, 160)];
+  const shift = (d: number) => two.map(x => ({ ...x, x1: x.x1 + d, x2: x.x2 + d }));
+  const facts: LabelFacts[] = [
+    { width: 640, height: 480, boxes: two },                                               // 0
+    { width: 640, height: 480, boxes: [...two].reverse() },                                // 1 same, other order
+    { width: 640, height: 480, boxes: shift(0.6) },                                        // 2 0.6 px off
+    { width: 640, height: 480, boxes: [two[0], { ...two[1], cls: "head" }] },              // 3 a class differs
+    { width: 640, height: 481, boxes: two },                                               // 4 other size
+    { width: 640, height: 480, boxes: [...two, b("head", 300, 300, 320, 330)] },           // 5 one box more
+    { width: 640, height: 480, boxes: [two[0], { ...two[1], x1: 120, x2: 170 }] },        // 6 a box 20 px away
+    { width: 640, height: 480, boxes: [] },                                                // 7 no boxes
+    { width: 640, height: 480, boxes: [] },                                                // 8 no boxes
+    { width: 640, height: 480, boxes: shift(5) },                                          // 9 5 px off
+    { width: 640, height: 480, boxes: [b("head", 10, 10, 50, 50, 0.5), two[1]] },          // 10 a box turned
+  ];
+  const pairs = labelPairs(facts);
+  const has = (a: number, c: number) => pairs.find(p => p[0] === a && p[1] === c);
+  eq(pairs.filter(p => [4, 5, 6, 7, 8, 10].includes(p[0]) || [4, 5, 6, 7, 8, 10].includes(p[1])).length, 0,
+    "no pair with another size, another box count, a box 20 px away, a turned box, or no boxes at all");
+  eq(has(0, 1)?.slice(7), [0, 1], "the same boxes in another order: 0 px, classes agree");
+  eq(has(0, 2)?.slice(7), [0.6, 1], "0.6 px off");
+  eq(has(0, 3)?.slice(7), [0, 0], "same corners, a class differs: listed, flagged");
+  eq(has(0, 9)?.slice(7), [5, 1], "5 px off is listed (up to MAX_BOX_TOL)");
+  eq(has(2, 9)?.slice(7), [4.4, 1], "... and between two shifted copies, the difference of their shifts");
+  check(pairs.every(p => p[0] < p[1] && p[2] === 0 && p[4] === -1 && p[6] === 0), "label pairs claim no hash, model or alignment match");
+
+  const s = preset("frames", "none");
+  eq([s.boxTol, s.sameClass], [1, false], "by default: within 1 px, classes not compared");
+  eq(pairKind(has(0, 2)!, s), "labels", "0.6 px counts at 1 px");
+  eq(pairKind(has(0, 9)!, s), null, "5 px does not ...");
+  eq(pairKind(has(0, 9)!, { ...s, boxTol: 5 }), "labels", "... until the slider says 5");
+  eq(pairKind(has(0, 3)!, s), "labels", "a differing class still counts ...");
+  eq(pairKind(has(0, 3)!, { ...s, sameClass: true }), null, "... unless classes must match");
+  eq(pairKind([0, 1, 0, 30, -1, 0, 0], s), null, "a scanner pair is never a label match");
+  const groups = groupPairs(facts.length, pairs, s);
+  eq(groups.map(g => [g.kind, g.members]), [["labels", [0, 1, 2, 3]]], "one group at 1 px: 0, 1, 2, 3");
+  check(groups[0].pairs.some(p => !p.sameClass) && groups[0].pairs.every(p => p.boxDev >= 0), "its pairs carry the corner difference and the class flag");
+  eq(matchBoxes(two, shift(1.5), 1), null, "matchBoxes: 1.5 px is outside 1 px");
+
+  let seed = 7;   // mulberry32
+  const rnd = () => {
+    seed = (seed + 0x6D2B79F5) | 0;
+    let x = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    x = (x + Math.imul(x ^ (x >>> 7), 61 | x)) ^ x;
+    return ((x ^ (x >>> 14)) >>> 0) / 4294967296 * 600;
+  };
+  const many: LabelFacts[] = Array.from({ length: 15000 }, (_, i) => ({
+    width: 640, height: 640, boxes: Array.from({ length: 1 + (i % 4) }, () => { const x = rnd(), y = rnd(); return b("head", x, y, x + 10 + rnd() / 10, y + 10 + rnd() / 10); }),
+  }));
+  many[14999] = { ...many[3], boxes: [...many[3].boxes].reverse() };
+  const t0 = performance.now();
+  const found = labelPairs(many);
+  const ms = performance.now() - t0;
+  check(found.some(p => p[0] === 3 && p[1] === 14999), "15,000 images: the planted copy is found");
+  const close = found.filter(p => (p as number[])[7] <= 1);
+  eq(close.map(p => [p[0], p[1]]), [[3, 14999]], "... and at 1 px nothing else among random boxes");
+  check(ms < 1500, "... in well under a couple of seconds", Math.round(ms));
 }
 
 phase("time estimates read like times");

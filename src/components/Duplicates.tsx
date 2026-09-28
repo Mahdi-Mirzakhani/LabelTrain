@@ -12,8 +12,8 @@ import { Checkbox, Segmented, Slider } from "./ui";
 import { t } from "../i18n";
 import { inElectron, pathToAppUrl } from "../ipc";
 import {
-  MODELS, bytesText, clock, durationText, estimateSeconds, groupPairs, pairKey, preset, suggestKeeper,
-  type DupGroup, type MatchKind, type PresetName, type Sensitivity,
+  MAX_BOX_TOL, MODELS, bytesText, clock, durationText, estimateSeconds, groupPairs, labelPairs, pairKey, pairKind, preset, suggestKeeper,
+  type DupGroup, type DupMethod, type GroupPair, type MatchKind, type Pair, type PresetName, type Sensitivity,
 } from "../lib/dedup";
 import type { BBox, DedupCacheInfo, DedupModel, DedupProgress, DedupScanResult, DedupScope } from "../electron-api";
 import type { AnnotationFormat, ClassDef, ProjectInfo } from "../types";
@@ -41,14 +41,16 @@ interface Props {
 interface Facts { boxes: BBox[] }
 interface Run {
   started: number;
-  model: DedupModel;
+  model: DupMethod;
   align: boolean;
   images: number;
   guess: number | null;   // seconds the whole scan should take, for "left" before the first rate is known
   steps: Record<string, { done: number; total: number; t0: number; t1?: number }>;
   info: Record<string, string>;
 }
-interface Scan { root: string; result: DedupScanResult; seconds: number; label: string }
+/** A scan's result: the scanner's, or the label comparison's, whose pairs carry two more numbers. */
+type ScanData = Omit<DedupScanResult, "pairs"> & { pairs: Pair[] };
+interface Scan { root: string; method: DupMethod; result: ScanData; seconds: number; label: string }
 
 const ROW_H = 78;
 const MODEL_ORDER: DedupModel[] = ["none", "resnet50", "dinov2"];
@@ -65,7 +67,7 @@ export function DuplicatesRoute({
 }: Props) {
   const [scope, setScope] = useState<DedupScope | null>(null);
   const [whole, setWhole] = useState(true);
-  const [model, setModel] = useState<DedupModel>("resnet50");
+  const [model, setModel] = useState<DupMethod>("resnet50");
   const [align, setAlign] = useState(false);
   const [counted, setCounted] = useState<number | null>(null);
   const [cacheInfo, setCacheInfo] = useState<DedupCacheInfo | null>(null);
@@ -90,8 +92,9 @@ export function DuplicatesRoute({
   const [busy, setBusy] = useState(false);
   const [scrollTop, setScrollTop] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
+  const cancelLabels = useRef(false);
 
-  const modelName = (m: DedupModel) => ({ none: t("Hashes only"), resnet50: "ResNet50", dinov2: "DINOv2" } as const)[m];
+  const modelName = (m: DupMethod) => ({ none: t("Hashes only"), resnet50: "ResNet50", dinov2: "DINOv2", labels: t("Same labels") } as const)[m];
 
   // ---- scope, not-duplicates list, undo state and what is cached
   useEffect(() => {
@@ -135,34 +138,83 @@ export function DuplicatesRoute({
     return () => window.clearInterval(id);
   }, [run]);
 
+  /**
+   * The "Same labels" scan, in this window: every image's size and boxes
+   * through the loaders the Annotate tab uses — so any label format works —
+   * then labelPairs. No Python, no pixels read.
+   */
+  const scanLabels = useCallback(async (images: string[]): Promise<{ result: ScanData; boxes: Map<string, BBox[]> }> => {
+    const names = classes.map(c => c.name);
+    const own = project ? norm(project.imageDir).toLowerCase() + "/" : "\0";
+    const sizes = new Map<string, { width: number; height: number; size: number }>();
+    const boxes = new Map<string, BBox[]>();
+    const t0 = Date.now();
+    const step = (done: number, t1?: number) =>
+      setRun(r => r && { ...r, steps: { ...r.steps, read: { done, total: images.length, t0, t1 } } });
+    step(0);
+    for (let s = 0; s < images.length; s += 250) {
+      if (cancelLabels.current) throw new Error("cancelled");
+      const chunk = images.slice(s, s + 250);
+      const mine = chunk.filter(p => norm(p).toLowerCase().startsWith(own)), other = chunk.filter(p => !norm(p).toLowerCase().startsWith(own));
+      const none: Record<string, BBox[]> = {};
+      const [meta, a, b] = await Promise.all([
+        window.api!.loadImageMetadata(chunk),
+        mine.length ? window.api!.loadAnnotationsBatch({ imagePaths: mine, classes: names, format, outputDir }) : none,
+        other.length ? window.api!.loadAnnotationsBatch({ imagePaths: other, classes: names, format, outputDir: "" }) : none,
+      ]);
+      for (const m of meta) sizes.set(m.path, m);
+      for (const [p, bx] of Object.entries({ ...a, ...b })) boxes.set(p, bx);
+      step(s + chunk.length);
+    }
+    step(images.length, Date.now());
+    const c0 = Date.now();
+    setRun(r => r && { ...r, steps: { ...r.steps, compare: { done: 0, total: 1, t0: c0 } } });
+    const pairs = labelPairs(images.map(p => ({ width: sizes.get(p)?.width ?? 0, height: sizes.get(p)?.height ?? 0, boxes: boxes.get(p) ?? [] })));
+    setRun(r => r && { ...r, steps: { ...r.steps, compare: { done: 1, total: 1, t0: c0, t1: Date.now() } } });
+    const items = images.map(p => ({ path: p, width: sizes.get(p)?.width ?? 0, height: sizes.get(p)?.height ?? 0, bytes: sizes.get(p)?.size ?? 0 }));
+    return { result: { items, pairs, model: "none", deep: false, deepError: null, align: false }, boxes };
+  }, [project, classes, format, outputDir]);
+
   const runScan = useCallback(async (withModel = model, withAlign = align) => {
     if (!scope || !root || run) return;
+    const byLabels = withModel === "labels";
+    const alignOn = withAlign && withModel !== "none" && !byLabels;
     setModel(withModel);
-    setAlign(withAlign && withModel !== "none");
+    setAlign(alignOn);
     setScanError(null);
+    cancelLabels.current = false;
     const started = Date.now();
-    const guess = counted !== null ? estimateSeconds(counted, withModel, withAlign && withModel !== "none", {
+    const guess = counted !== null ? estimateSeconds(counted, withModel, alignOn, {
       hashes: !!cacheInfo?.hashes, model: !!cacheInfo?.models.includes(withModel), align: !!cacheInfo?.align.includes(withModel),
     }) : null;
-    setRun({ started, model: withModel, align: withAlign && withModel !== "none", images: counted ?? 0, guess, steps: { list: { done: 0, total: 1, t0: started } }, info: {} });
+    setRun({ started, model: withModel, align: alignOn, images: counted ?? 0, guess, steps: { list: { done: 0, total: 1, t0: started } }, info: {} });
     try {
       const lists = await Promise.all(dirs.map(d => window.api!.listImagePaths(d)));
       const images = lists.flat();
       setRun(r => r && { ...r, images: images.length, steps: { ...r.steps, list: { done: 1, total: 1, t0: started, t1: Date.now() } } });
       if (!images.length) throw new Error(t("No images to scan"));
-      const result = await window.api!.dedupScan({
-        images, root, model: withModel, align: withAlign && withModel !== "none", minCos: MODELS[withModel].floor,
-      });
-      const label = modelName(result.deep ? result.model : "none") + (result.align ? ` + ${t("pixel alignment")}` : "");
-      setScan({ root, result, seconds: (Date.now() - started) / 1000, label });
+      let result: ScanData;
+      let loaded = new Map<string, Facts>();
+      if (byLabels) {
+        const r = await scanLabels(images);
+        result = r.result;
+        loaded = new Map([...r.boxes].map(([p, b]) => [p, { boxes: b }]));
+      } else {
+        result = await window.api!.dedupScan({ images, root, model: withModel, align: alignOn, minCos: MODELS[withModel].floor });
+      }
+      const method: DupMethod = byLabels ? "labels" : result.deep ? result.model : "none";
+      const label = modelName(method) + (result.align ? ` + ${t("pixel alignment")}` : "");
+      setScan({ root, method, result, seconds: (Date.now() - started) / 1000, label });
       setRemoved(new Set());
       setKeepers(new Map());
-      setFacts(new Map());
+      setFacts(loaded);
       setSelId(null);
+      setKindFilter("all");
       const m = result.deep ? result.model : "none";
-      setSens(s => presetName === "custom" ? { ...s, minCos: Math.max(MODELS[m].min, s.minCos) } : preset(presetName, m));
-      void window.api!.dedupCacheInfo(root).then(setCacheInfo);
-      if (withModel !== "none" && !result.deep) {
+      setSens(s => presetName === "custom" ? { ...s, minCos: Math.max(MODELS[m].min, s.minCos) }
+        : { ...preset(presetName, m), boxTol: s.boxTol, sameClass: s.sameClass });
+      if (!byLabels) void window.api!.dedupCacheInfo(root).then(setCacheInfo);
+      if (!byLabels && withModel !== "none" && !result.deep) {
         pushToast({ icon: "alert", sticky: true, msg: `${modelName(withModel)} ${t("could not run")}: ${result.deepError ?? ""}` });
       }
     } catch (err) {
@@ -172,11 +224,12 @@ export function DuplicatesRoute({
       setRun(null);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scope, root, dirs, run, model, align, counted, cacheInfo, presetName, pushToast]);
+  }, [scope, root, dirs, run, model, align, counted, cacheInfo, presetName, pushToast, scanLabels]);
 
   // ---- groups at the chosen sensitivity
   const items = scan?.result.items ?? [];
-  const scanModel: DedupModel = scan ? (scan.result.deep ? scan.result.model : "none") : model;
+  const byLabels = scan?.method === "labels";
+  const scanModel: DedupModel = scan ? (scan.result.deep ? scan.result.model : "none") : model === "labels" ? "none" : model;
   const splitOf = useCallback((p: string) => {
     if (!scope?.splits.length) return "";
     const q = norm(p).toLowerCase();
@@ -188,6 +241,13 @@ export function DuplicatesRoute({
     return groupPairs(items.length, scan.result.pairs, sens, (a, b) =>
       removed.has(items[a].path) || removed.has(items[b].path) ||
       ignored.has(pairKey(rel(r, items[a].path), rel(r, items[b].path))));
+  }, [scan, items, sens, removed, ignored]);
+  /** Matching pairs left out because the user marked them "not duplicates" — so an empty list is not mistaken for none found. */
+  const hiddenPairs = useMemo(() => {
+    if (!scan || !ignored.size) return 0;
+    const r = scan.root;
+    return scan.result.pairs.filter(p => pairKind(p, sens) && !removed.has(items[p[0]].path) && !removed.has(items[p[1]].path)
+      && ignored.has(pairKey(rel(r, items[p[0]].path), rel(r, items[p[1]].path)))).length;
   }, [scan, items, sens, removed, ignored]);
   const isCross = useCallback((g: DupGroup) => new Set(g.members.map(i => splitOf(items[i].path))).size > 1,
     [items, splitOf]);
@@ -297,7 +357,7 @@ export function DuplicatesRoute({
       const keeper = items[[...keep][0]].path;
       return g.members.filter(i => !keep.has(i)).map(i => {
         const p = g.pairs.find(pp => (pp.a === i && keep.has(pp.b)) || (pp.b === i && keep.has(pp.a))) ?? g.pairs[0];
-        return { image: items[i].path, keeper, match: p.kind, hamming: p.ham, cosine: p.cos >= 0 ? p.cos : undefined };
+        return { image: items[i].path, keeper, match: p.kind, hamming: p.kind === "labels" ? undefined : p.ham, cosine: p.cos >= 0 ? p.cos : undefined };
       });
     });
     if (!list.length) return;
@@ -354,7 +414,7 @@ export function DuplicatesRoute({
     return active ? <div className="workspace"><div className="empty"><div className="t-title">{t("Open a project first")}</div></div></div> : null;
   }
   const kindLabel: Record<MatchKind, string> = {
-    exact: t("Exact copy"), near: t("Copy"), aligned: t("Same photo"), similar: t("Look-alike"),
+    exact: t("Exact copy"), near: t("Copy"), labels: t("Same labels"), aligned: t("Same photo"), similar: t("Look-alike"),
   };
   const presetOptions: { value: Preset; label: string }[] = [
     { value: "exact", label: t("Exact only") },
@@ -366,12 +426,13 @@ export function DuplicatesRoute({
   const estimate = counted !== null ? estimateSeconds(counted, model, align, {
     hashes: !!cacheInfo?.hashes, model: !!cacheInfo?.models.includes(model), align: !!cacheInfo?.align.includes(model),
   }) : null;
-  const stronger = MODEL_ORDER.slice(MODEL_ORDER.indexOf(scanModel) + 1);
-  const canAlign = !!scan && !scan.result.align && scanModel !== "none";
+  const stronger = byLabels ? [] : MODEL_ORDER.slice(MODEL_ORDER.indexOf(scanModel) + 1);
+  const canAlign = !!scan && !byLabels && !scan.result.align && scanModel !== "none";
   const start = Math.max(0, Math.floor(scrollTop / ROW_H) - 8);
   const visible = groups.slice(start, start + 40);
+  const noAlign = model === "none" || model === "labels";
 
-  const picker = (
+  const picker = (<>
     <div className="dup-models">
       {MODEL_ORDER.map(m => (
         <button key={m} className={"dup-model" + (model === m ? " on" : "")} onClick={() => setModel(m)} disabled={!!run}>
@@ -386,15 +447,24 @@ export function DuplicatesRoute({
           {cacheInfo?.models.includes(m) && <span className="dup-cached">{t("scanned before — quick")}</span>}
         </button>
       ))}
-      <label className={"dup-model dup-align" + (align ? " on" : "") + (model === "none" ? " off" : "")}>
+      <label className={"dup-model dup-align" + (align && !noAlign ? " on" : "") + (noAlign ? " off" : "")}>
         <div className="dup-model-head">
-          <Checkbox on={align && model !== "none"} onChange={v => setAlign(v)} />
+          <Checkbox on={align && !noAlign} onChange={v => setAlign(v)} />
           <span className="dup-model-name">{t("+ Pixel alignment")}</span>
         </div>
         <span className="t-caption tsec">{t("Strongest: lines each image up with its nearest neighbours pixel by pixel — finds heavy crops, shifts and turns. Slower the first time.")}</span>
       </label>
     </div>
-  );
+    <div className="t-caption tsec dup-section-title">{t("Or compare the labels")}</div>
+    <button className={"dup-model dup-labels" + (model === "labels" ? " on" : "")} onClick={() => setModel("labels")} disabled={!!run}>
+      <div className="dup-model-head">
+        <span className="dup-model-name"><Icon name="tag" size={13} /> {t("Same labels")}</span>
+        <span className="t-caption tsec">{t("no pixels read · seconds")}</span>
+      </div>
+      <span className="t-caption tsec">{t("Two images count as duplicates when they are the same size, have the same number of boxes, and every box sits in the same place — within 1 px, which you can change after the scan. The order of the boxes does not matter, nor their class unless you ask.")}</span>
+      <span className="t-caption tsec">{t("Finds a copy saved under another name or re-exported with its labels, whatever was done to its pixels. Images without boxes are skipped. Frames of a still camera whose boxes did not move match too — compare those side by side before moving them out.")}</span>
+    </button>
+  </>);
 
   return (
     <div className="body dup-body" style={{ display: active ? undefined : "none" }}>
@@ -417,7 +487,9 @@ export function DuplicatesRoute({
               </button>
             )}
             {run ? (
-              <button className="btn btn-secondary sm" onClick={() => void window.api!.cancelDedupScan()}>
+              <button className="btn btn-secondary sm" onClick={() => {
+                if (run.model === "labels") cancelLabels.current = true; else void window.api!.cancelDedupScan();
+              }}>
                 <Icon name="x" size={14} />{t("Cancel")}
               </button>
             ) : scan && (
@@ -454,7 +526,8 @@ export function DuplicatesRoute({
         ) : (
           <>
             <div className="dup-summary">
-              <span><Icon name="checkCircle" size={14} /> {t("Scanned")} <b className="tnum">{items.length.toLocaleString()}</b> {t("images with")} <b>{scan.label}</b> {t("in")} {clock(scan.seconds)}</span>
+              <span><Icon name="checkCircle" size={14} /> {t("Scanned")} <b className="tnum">{items.length.toLocaleString()}</b> {t("images with")} <b>{scan.label}</b> {t("in")} {clock(scan.seconds)}
+                {hiddenPairs > 0 && <span className="tsec"> · <b className="tnum">{hiddenPairs.toLocaleString()}</b> {t("pairs you marked “Not duplicates” are hidden")}</span>}</span>
               {(stronger.length > 0 || canAlign) && (
                 <span className="dup-stronger">
                   {t("Missing some?")}
@@ -467,6 +540,20 @@ export function DuplicatesRoute({
                 </span>
               )}
             </div>
+            {byLabels ? (
+              <div className="dup-controls">
+                <span className="t-caption tsec">{t("Same size, same number of boxes, and box for box:")}</span>
+                <div className="dup-sliders">
+                  <div className="dup-slider">
+                    <span>{t("every corner within")} <b className="tnum">{sens.boxTol} px</b></span>
+                    <Slider value={sens.boxTol} min={0} max={MAX_BOX_TOL} step={0.5} onChange={v => setSens(s => ({ ...s, boxTol: v }))} width={140} />
+                  </div>
+                  <div className="dup-slider">
+                    <Checkbox on={sens.sameClass} onChange={v => setSens(s => ({ ...s, sameClass: v }))} label={t("Classes must match too")} />
+                  </div>
+                </div>
+              </div>
+            ) : (
             <div className="dup-controls">
               <div className="row gap-sm" style={{ flexWrap: "wrap" }}>
                 <span className="t-caption tsec">{t("Sensitivity")}</span>
@@ -494,6 +581,7 @@ export function DuplicatesRoute({
                 )}
               </div>
             </div>
+            )}
 
             <div className="dup-kpis">
               <div className="kpi"><div className="num tnum">{groups.length.toLocaleString()}</div><div className="lbl">{t("groups")}</div></div>
@@ -505,12 +593,12 @@ export function DuplicatesRoute({
             <div className="dup-main">
               <div className="dup-list-col">
                 <div className="dup-list-head">
-                  <Segmented value={kindFilter} onChange={setKindFilter} options={[
+                  {!byLabels && <Segmented value={kindFilter} onChange={setKindFilter} options={[
                     { value: "all", label: t("All") }, { value: "exact", label: t("Exact") },
                     { value: "near", label: t("Copies") },
                     ...(scan.result.align ? [{ value: "aligned" as const, label: t("Same photo") }] : []),
                     ...(scanModel !== "none" ? [{ value: "similar" as const, label: t("Look-alikes") }] : []),
-                  ]} />
+                  ]} />}
                   {scope && scope.splits.length > 0 && whole && (
                     <Checkbox on={crossOnly} onChange={setCrossOnly} label={t("Across splits only")} />
                   )}
@@ -519,7 +607,7 @@ export function DuplicatesRoute({
                   {groups.length === 0 ? (
                     <div className="dup-none">
                       <Icon name="checkCircle" size={28} />
-                      <b>{t("No duplicates at this sensitivity")}</b>
+                      <b>{byLabels ? t("No two images share their size and boxes") : t("No duplicates at this sensitivity")}</b>
                       {(stronger.length > 0 || canAlign) && <span>{t("A stronger model may find what this one missed:")}</span>}
                       {stronger.map(m => (
                         <button key={m} className="btn btn-secondary sm" onClick={() => void runScan(m, align)}>
@@ -546,7 +634,9 @@ export function DuplicatesRoute({
                             <div className="dup-row-meta">
                               <div className="row gap-xs">
                                 <span className={"dup-kind dup-kind-" + g.kind}>{kindLabel[g.kind]}</span>
-                                <span className="t-caption tnum">{g.kind === "similar" ? `${g.maxCos.toFixed(3)}` : g.kind === "near" ? `Δ${g.minHam}` : ""}</span>
+                                <span className="t-caption tnum">{g.kind === "similar" ? `${g.maxCos.toFixed(3)}` : g.kind === "near" ? `Δ${g.minHam}`
+                                  : g.kind === "labels" ? `${items[g.members[0]].width}×${items[g.members[0]].height}` : ""}</span>
+                                {g.pairs.some(p => p.kind === "labels" && !p.sameClass) && <span className="dup-cls-diff">{t("classes differ")}</span>}
                               </div>
                               <div className="t-caption tsec dup-row-name">{items[g.members[0]].path.split(/[\\/]/).pop()}{g.members.length > 1 ? ` +${g.members.length - 1}` : ""}</div>
                               {splits.length > 1
@@ -633,15 +723,20 @@ export function DuplicatesRoute({
 
 /** The scan as a list of steps, each with its own count, speed and clock, plus the time left. */
 function ScanProgress({ run, now, fa, modelName, scopeText }: {
-  run: Run; now: number; fa: boolean; modelName: (m: DedupModel) => string; scopeText: string;
+  run: Run; now: number; fa: boolean; modelName: (m: DupMethod) => string; scopeText: string;
 }) {
   const elapsed = (now - run.started) / 1000;
   const cached = +(run.info.cached ?? NaN);
   const todo = +(run.info.todo ?? NaN);
   const device = run.info.device === "cuda" ? "GPU" : run.info.device === "cpu" ? "CPU" : "";
   type Step = { id: string; title: string; detail?: string };
-  const steps: Step[] = [
-    { id: "list", title: t("List the images"), detail: run.images ? `${run.images.toLocaleString()} ${t("images")} · ${scopeText}` : scopeText },
+  const listStep: Step = { id: "list", title: t("List the images"), detail: run.images ? `${run.images.toLocaleString()} ${t("images")} · ${scopeText}` : scopeText };
+  const steps: Step[] = run.model === "labels" ? [
+    listStep,
+    { id: "read", title: t("Read each image's size and label file") },
+    { id: "compare", title: t("Compare the boxes of images with the same size and box count") },
+  ] : [
+    listStep,
     ...(run.model !== "none" ? [{
       id: "load", title: `${t("Load")} ${modelName(run.model)}`,
       detail: [device, run.model === "dinov2" ? t("the first time it downloads ~350 MB") : ""].filter(Boolean).join(" · "),
@@ -703,7 +798,8 @@ function ScanProgress({ run, now, fa, modelName, scopeText }: {
         })}
       </ol>
       <div className="t-caption tsec dup-scan-foot">
-        <Icon name="info" size={13} />{t("You can switch to another tab — the scan keeps running, and a second scan of the same images takes seconds.")}
+        <Icon name="info" size={13} />{run.model === "labels" ? t("You can switch to another tab — the scan keeps running.")
+          : t("You can switch to another tab — the scan keeps running, and a second scan of the same images takes seconds.")}
       </div>
     </div>
   );
@@ -712,7 +808,7 @@ function ScanProgress({ run, now, fa, modelName, scopeText }: {
 function DupCard({ i, items, splitOf, facts, showLabels, classColor, keep, index, pair, onToggle, big, fa }: {
   i: number; items: DedupScanResult["items"]; splitOf: (p: string) => string; facts: Map<string, Facts>;
   showLabels: boolean; classColor: (k: string) => string; keep: boolean; index: number;
-  pair?: { kind: MatchKind; ham: number; cos: number; mirrored: boolean }; onToggle: () => void; big?: boolean; fa: boolean;
+  pair?: GroupPair; onToggle: () => void; big?: boolean; fa: boolean;
 }) {
   const it = items[i];
   const boxes = facts.get(it.path)?.boxes;
@@ -743,8 +839,10 @@ function DupCard({ i, items, splitOf, facts, showLabels, classColor, keep, index
           <div className="t-caption tsec tnum">
             {pair.kind === "exact" ? t("identical file")
               : pair.kind === "aligned" ? t("lines up pixel for pixel")
-                : `${t("hash distance")} ${pair.ham}${pair.cos >= 0 ? ` · ${t("similarity")} ${pair.cos.toFixed(3)}` : ""}`}
+                : pair.kind === "labels" ? (pair.boxDev > 0 ? `${t("same size and boxes, corners within")} ${pair.boxDev} px` : t("same size and boxes, exactly"))
+                  : `${t("hash distance")} ${pair.ham}${pair.cos >= 0 ? ` · ${t("similarity")} ${pair.cos.toFixed(3)}` : ""}`}
             {pair.mirrored ? ` · ${t("mirrored")}` : ""}
+            {pair.kind === "labels" && !pair.sameClass && <> · <span className="dup-cls-diff">{t("classes differ")}</span></>}
           </div>
         )}
       </div>
