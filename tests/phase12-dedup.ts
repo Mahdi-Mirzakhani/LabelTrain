@@ -9,9 +9,11 @@ import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { phase, check, eq, report } from "./_assert.ts";
-import { PRESETS, groupPairs, pairKind, suggestKeeper, bytesText } from "../src/lib/dedup.ts";
 import {
-  applyDedup, dedupScope, lastDedupBatch, loadNotDuplicates, runDedupScan, saveNotDuplicates, undoDedup,
+  PRESETS, clock, durationText, estimateSeconds, groupPairs, pairKind, preset, suggestKeeper, bytesText,
+} from "../src/lib/dedup.ts";
+import {
+  applyDedup, dedupCacheInfo, dedupScope, lastDedupBatch, loadNotDuplicates, runDedupScan, saveNotDuplicates, undoDedup,
 } from "../electron/dedup.ts";
 import type { DedupPair } from "../electron/ipc-types.ts";
 
@@ -20,33 +22,61 @@ async function put(p: string, data: string | Buffer = "x") { await fs.mkdir(path
 
 phase("pairKind: exact always counts, the rest by sensitivity");
 {
-  const exact: DedupPair = [0, 1, 1, 0, 1, 0];
-  const near: DedupPair = [0, 2, 0, 3, 0.9, 0];
-  const frame: DedupPair = [1, 3, 0, 20, 0.96, 0];
+  const exact: DedupPair = [0, 1, 1, 0, 1, 0, 1];
+  const near: DedupPair = [0, 2, 0, 3, 0.9, 0, 0];
+  const frame: DedupPair = [1, 3, 0, 20, 0.96, 0, 0];
+  const crop: DedupPair = [2, 4, 0, 22, 0.86, 0, 1];
   eq(pairKind(exact, PRESETS.exact), "exact", "exact copy at the strictest setting");
   eq(pairKind(near, PRESETS.exact), null, "a resized copy is not exact");
   eq(pairKind(near, PRESETS.copies), "near", "... but is a copy");
   eq(pairKind(frame, PRESETS.copies), null, "a video frame is not a copy");
   eq(pairKind(frame, PRESETS.frames), "similar", "... but counts with crops & frames");
-  eq(pairKind([0, 1, 0, 30, -1, 0], PRESETS.loose), null, "no CNN score (-1) never counts as similar");
+  eq(pairKind(crop, PRESETS.exact), null, "a crop that lines up is not exact");
+  eq(pairKind(crop, PRESETS.copies), "aligned", "... but is the same photo from 'copies' on, whatever its similarity");
+  eq(pairKind([0, 1, 0, 30, -1, 0, 0], PRESETS.loose), null, "no model score (-1) never counts as similar");
+}
+
+phase("presets follow the model's calibration");
+{
+  eq(preset("frames", "resnet50").minCos, 0.93, "ResNet50: 0.93");
+  eq(preset("frames", "dinov2").minCos, 0.90, "DINOv2: 0.90");
+  eq(preset("loose", "dinov2").minCos, 0.85, "DINOv2 loose: 0.85");
+  eq(preset("frames", "none").similar, false, "hashes only: no look-alike level");
 }
 
 phase("groupPairs unions chains, ranks groups and honours 'not duplicates'");
 {
   const pairs: DedupPair[] = [
-    [0, 1, 0, 2, 0.99, 1],   // near, mirrored
-    [1, 2, 0, 20, 0.96, 0],  // similar only
-    [3, 4, 1, 0, 1, 0],      // exact
-    [5, 6, 0, 30, 0.93, 0],  // loose only
+    [0, 1, 0, 2, 0.99, 1, 0],   // near, mirrored
+    [1, 2, 0, 20, 0.96, 0, 0],  // similar only
+    [3, 4, 1, 0, 1, 0, 1],      // exact
+    [5, 6, 0, 30, 0.91, 0, 0],  // loose only (ResNet50 loose = 0.90)
+    [7, 8, 0, 25, 0.80, 0, 1],  // lined up, low similarity
   ];
-  const copies = groupPairs(7, pairs, PRESETS.copies);
-  eq(copies.map(g => g.members), [[3, 4], [0, 1]], "copies: the exact group first, then the near one");
+  const copies = groupPairs(9, pairs, PRESETS.copies);
+  eq(copies.map(g => [g.kind, g.members]), [["exact", [3, 4]], ["near", [0, 1]], ["aligned", [7, 8]]],
+    "copies: exact, then near, then the same photo lined up");
   check(copies[1].pairs[0].mirrored, "the mirrored flag is carried");
-  const frames = groupPairs(7, pairs, PRESETS.frames);
-  eq(frames.map(g => [g.kind, g.members]), [["exact", [3, 4]], ["near", [0, 1, 2]]], "frames: 0-1-2 chain into one group, kind = strongest");
-  eq(groupPairs(7, pairs, PRESETS.loose).length, 3, "loose adds the 0.93 pair");
-  const cut = groupPairs(7, pairs, PRESETS.frames, (a, b) => a === 1 && b === 2);
-  eq(cut.map(g => g.members), [[3, 4], [0, 1]], "marking 1-2 as not duplicates cuts the chain there");
+  const frames = groupPairs(9, pairs, PRESETS.frames);
+  eq(frames.map(g => [g.kind, g.members]), [["exact", [3, 4]], ["near", [0, 1, 2]], ["aligned", [7, 8]]], "frames: 0-1-2 chain into one group, kind = strongest");
+  eq(groupPairs(9, pairs, PRESETS.loose).length, 4, "loose adds the 0.91 pair");
+  const cut = groupPairs(9, pairs, PRESETS.frames, (a, b) => a === 1 && b === 2);
+  eq(cut.map(g => g.members), [[3, 4], [0, 1], [7, 8]], "marking 1-2 as not duplicates cuts the chain there");
+}
+
+phase("time estimates read like times");
+{
+  const cold = estimateSeconds(14725, "resnet50", false, { hashes: false, model: false, align: false });
+  const warm = estimateSeconds(14725, "resnet50", false, { hashes: true, model: true, align: false });
+  check(cold > 240 && cold < 420, "a first ResNet50 scan of 14,725 images: ~5 min (measured 292 s)", cold);
+  check(warm < 30, "the same scan cached: seconds", warm);
+  check(estimateSeconds(14725, "dinov2", true, { hashes: true, model: false, align: false }) > cold,
+    "a new model plus alignment takes longer than a first ResNet50 scan");
+  eq(durationText(5, false), "under 10 s", "seconds");
+  eq(durationText(43, false), "about 45 s", "rounded seconds");
+  eq(durationText(292, false), "about 5 min", "minutes");
+  eq(durationText(292, true), "حدود 5 دقیقه", "Persian");
+  eq(clock(83), "1:23", "clock");
 }
 
 phase("suggestKeeper");
@@ -152,15 +182,36 @@ try {
       console.log("  (skipped: no Python with Pillow on PATH)");
     } else {
       const images = ["a.png", "a_copy.png", "a_mirror.png", "other.png"].map(f => path.join(dir, f));
-      const res = await runDedupScan(path.resolve("scripts", "dedup_scan.py"), { images, root: dir, deep: false }, () => {});
+      const steps: string[] = [];
+      const info: Record<string, string> = {};
+      const res = await runDedupScan(path.resolve("scripts", "dedup_scan.py"), { images, root: dir, model: "none", align: false },
+        p => { if (p.phase === "info" && p.key) info[p.key] = p.value ?? ""; else if (!steps.includes(p.phase)) steps.push(p.phase); });
       const names = (p: DedupPair) => [path.basename(res.items[p[0]].path), path.basename(res.items[p[1]].path)].sort().join(" ");
       const byName = new Map(res.pairs.map(p => [names(p), p]));
       check(byName.get("a.png a_copy.png")?.[2] === 1, "a.png and its byte copy are exact", [...byName.keys()]);
       const m = byName.get("a.png a_mirror.png");
       check(!!m && m[3] === 0 && m[5] === 1, "the mirrored copy matches on the mirrored hash", m);
       check(![...byName.keys()].some(k => k.includes("other.png")), "the unrelated image pairs with nothing");
-      check(await exists(path.join(dir, ".labeler_dedup_cache")), "the cache folder is written beside the images");
+      eq(steps, ["read", "compare"], "progress arrives step by step");
+      eq([info.model, info.cached, info.todo], ["none", "0", "4"], "and says what is cached and what is left to read");
+      eq(res.model, "none", "the result says which model ran");
+      eq((await dedupCacheInfo(dir)).hashes, true, "the hashes are cached beside the images");
+      const again: Record<string, string> = {};
+      await runDedupScan(path.resolve("scripts", "dedup_scan.py"), { images, root: dir, model: "none", align: false },
+        p => { if (p.phase === "info" && p.key) again[p.key] = p.value ?? ""; });
+      eq([again.cached, again.todo], ["4", "0"], "a second scan reads nothing");
     }
+  }
+
+  phase("dedupCacheInfo reads which models and alignments are cached");
+  {
+    const ds = path.join(root, "cached");
+    for (const f of ["dedup-0123abcd.npz", "dedup-0123abcd-resnet50.npz", "dedup-0123abcd-dinov2.npz", "dedup-0123abcd-dinov2-align.json", "other.txt"]) {
+      await put(path.join(ds, ".labeler_dedup_cache", f));
+    }
+    const c = await dedupCacheInfo(ds);
+    eq([c.hashes, c.models.sort(), c.align], [true, ["dinov2", "resnet50"], ["dinov2"]], "hashes, two models, one alignment");
+    eq(await dedupCacheInfo(path.join(root, "never")), { hashes: false, models: [], align: [] }, "never scanned: nothing");
   }
 } finally {
   await fs.rm(root, { recursive: true, force: true });

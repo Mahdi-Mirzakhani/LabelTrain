@@ -14,7 +14,9 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { spawn, type ChildProcess } from "node:child_process";
 import { labelFilesOf } from "./annotation-io.ts";
-import type { DedupApplyResult, DedupScanRequest, DedupScanResult, DedupScope, DedupUndoResult } from "./ipc-types.ts";
+import type {
+  DedupApplyResult, DedupCacheInfo, DedupProgress, DedupScanRequest, DedupScanResult, DedupScope, DedupUndoResult,
+} from "./ipc-types.ts";
 
 const SPLITS = ["train", "valid", "val", "test"];
 const IGNORE_FILE = ".labeler_dedup.json";
@@ -54,18 +56,37 @@ export function cancelDedupScan(): void {
   scanProc?.kill();
 }
 
+const CACHE_DIR = ".labeler_dedup_cache";
+
+/** What a previous scan left in the cache, so the tab can say how long the next one will take. */
+export async function dedupCacheInfo(root: string): Promise<DedupCacheInfo> {
+  let names: string[] = [];
+  try { names = await fs.readdir(path.join(root, CACHE_DIR)); } catch { /* never scanned */ }
+  const models = new Set<string>(), align = new Set<string>();
+  let hashes = false;
+  for (const n of names) {
+    const m = n.match(/^dedup-[0-9a-f]+(?:-([a-z0-9]+))?(-align\.json|\.npz)$/);
+    if (!m) continue;
+    if (!m[1]) hashes = true;
+    else if (m[2] === ".npz") models.add(m[1]);
+    else align.add(m[1]);
+  }
+  return { hashes, models: [...models], align: [...align] };
+}
+
 /**
  * Run the scanner on `python` (then `py` on Windows, past the Microsoft Store
- * stub), forwarding `@@progress <phase> <done> <total>` lines to `onProgress`.
+ * stub), forwarding `@@progress <phase> <done> <total>` lines, and `@@info
+ * <key> <value>` lines as phase "info", to `onProgress`.
  */
 export async function runDedupScan(
   script: string,
   req: DedupScanRequest,
-  onProgress: (p: { phase: string; done: number; total: number }) => void,
+  onProgress: (p: DedupProgress) => void,
 ): Promise<DedupScanResult> {
   const payload = JSON.stringify({
-    images: req.images, cache: path.join(req.root, ".labeler_dedup_cache"),
-    deep: req.deep, device: "auto", maxHam: req.maxHam ?? 12, minCos: req.minCos ?? 0.85,
+    images: req.images, cache: path.join(req.root, CACHE_DIR),
+    model: req.model, align: req.align, device: "auto", maxHam: req.maxHam ?? 12, minCos: req.minCos ?? 0.85,
   });
   const candidates = process.platform === "win32" ? ["python", "py"] : ["python3", "python"];
   scanCancelled = false;
@@ -89,8 +110,10 @@ export async function runDedupScan(
           const line = buf.slice(0, nl).replace(/\r$/, "");
           buf = buf.slice(nl + 1);
           const m = line.match(/^@@progress (\w+) (\d+) (\d+)$/);
+          const i = line.match(/^@@info (\w+) (.*)$/);
           if (m) onProgress({ phase: m[1], done: +m[2], total: +m[3] });
-          else err += line + "\n";
+          else if (i) onProgress({ phase: "info", done: 0, total: 0, key: i[1], value: i[2] });
+          else if (!/unauthenticated requests to the HF Hub|symlinks on Windows|developer mode/i.test(line)) err += line + "\n";
         }
       });
       proc.stdin!.on("error", () => { /* the Store stub never reads stdin */ });
@@ -109,7 +132,7 @@ export async function runDedupScan(
     last = r.msg;
   }
   throw new Error("Python was not found. The duplicate scan needs Python with Pillow and numpy " +
-    "(and torch + torchvision for look-alikes).\n" + last);
+    "(torch + torchvision for ResNet50, timm for DINOv2, opencv-python for pixel alignment).\n" + last);
 }
 
 // ------------------------------------------------------------------ move out / back

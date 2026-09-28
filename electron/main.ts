@@ -12,7 +12,7 @@ import { splitDataset, exportDataset } from "./dataset-split.ts";
 import { loadProgress, saveProgress } from "./progress.ts";
 import { loadReview } from "./review.ts";
 import {
-  applyDedup, cancelDedupScan, dedupScope, lastDedupBatch, loadNotDuplicates, runDedupScan,
+  applyDedup, cancelDedupScan, dedupCacheInfo, dedupScope, lastDedupBatch, loadNotDuplicates, runDedupScan,
   saveNotDuplicates, undoDedup,
 } from "./dedup.ts";
 import { collectSystemInfo } from "./system-info.ts";
@@ -362,6 +362,7 @@ function registerHandlers() {
     return runDedupScan(script, req, p => { if (!e.sender.isDestroyed()) e.sender.send("dedup:progress", p); });
   });
   ipcMain.handle("dedup:cancel", async () => cancelDedupScan());
+  ipcMain.handle("dedup:cacheInfo", async (_e, root: string) => dedupCacheInfo(root));
   ipcMain.handle("dedup:apply", async (_e, req: { root: string; items: DedupApplyItem[]; outputDir: string }) =>
     applyDedup(req.root, req.items, req.outputDir));
   ipcMain.handle("dedup:undo", async (_e, root: string) => undoDedup(root));

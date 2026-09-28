@@ -147,6 +147,8 @@ function AppShell() {
   // make it come back on the next launch.
   const [seenOnboarding, setSeenOnboarding] = useState(initial.seenOnboarding);
   const [tab, setTab] = useState<Tab>("annotate");
+  const [dupVisited, setDupVisited] = useState(false);
+  useEffect(() => { if (tab === "duplicates") setDupVisited(true); }, [tab]);
 
   // appearance / preferences
   const [theme, setTheme] = useState<ThemeMode>(initial.theme);
@@ -1566,8 +1568,10 @@ function AppShell() {
         />
       )}
       {tab === "deploy" && <DeployRoute project={project} classes={classes} pushToast={pushToast} />}
-      {tab === "duplicates" && (
-        <DuplicatesRoute project={project} classes={classes} classColor={classColor}
+      {/* Mounted from the first visit on and only hidden after, so a scan keeps
+          running (and its results stay) while the user works in another tab. */}
+      {(tab === "duplicates" || dupVisited) && (
+        <DuplicatesRoute active={tab === "duplicates"} project={project} classes={classes} classColor={classColor}
           format={savePlan.format} outputDir={outputDir} fa={lang === "fa"} pushToast={pushToast}
           beforeChange={flushAllDirty} onRemoved={dropImages}
           onRestored={() => { if (project) void openFolder(project.imageDir, project.name); }} />

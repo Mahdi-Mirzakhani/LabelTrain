@@ -207,19 +207,47 @@ The output directory is configurable in **Settings → Output directory**. Empty
 ## Duplicates
 
 **Duplicates** scans the open folder — or, when it is a YOLO split's `images/`,
-the whole dataset (train, valid, test) — and finds three kinds of repeat:
+the whole dataset (train, valid, test) — and finds four kinds of repeat:
 
 | Kind | What | Measured by |
 | --- | --- | --- |
 | Exact copy | the same file twice | BLAKE2 of the file |
 | Copy | resized, re-saved, mirrored or letterboxed | 64-bit DCT perceptual hash, mirrored too, after cropping flat borders |
-| Look-alike | cropped, zoomed, recoloured, the next frame of a video | cosine of ResNet50 features (needs torch + torchvision) |
+| Same photo | a heavy crop, shift or small turn of one photo | ORB features + RANSAC homography, then the overlap's correlation (NCC ≥ 0.9) |
+| Look-alike | cropped, zoomed, recoloured, the next frame of a video | cosine of ResNet50 or DINOv2 features (needs torch) |
 
-The scan (`scripts/dedup_scan.py`, on the same Python as Auto-label) lists every
-pair close by any measure, with all its measures, so the **Sensitivity**
-presets and sliders regroup instantly without scanning again. Results per
-image are cached in `.labeler_dedup_cache/` beside the images: a rescan of
-15,000 images takes seconds, the first one about five minutes on a GPU.
+Before a scan you choose how hard to look; each step finds what the one
+before it missed, so when a scan finds nothing, the results offer the next one:
+
+| Choice | Model | Finds |
+| --- | --- | --- |
+| Fast | hashes only | exact copies and copies; no torch needed |
+| Standard | ResNet50 (torchvision) | + look-alikes |
+| Strong | DINOv2 ViT-B/14 (timm, ~350 MB download the first time) | + tells a changed copy from a different photo best |
+| + Pixel alignment | on top of either model | + same photo, checked pixel by pixel against each image's 3 nearest neighbours |
+
+Standard needs the Auto-label Python with `torch` and `torchvision` (Ultralytics
+brings both), Strong also `pip install timm`, and pixel alignment OpenCV
+(also brought by Ultralytics). A model that cannot load says why, and the
+scan falls back to hashes.
+
+The screen estimates how long a scan will take before you start it; the first
+ResNet50 scan of 15,000 images took about five minutes on a GTX 1660 Ti.
+Measured on 31 duplicates found by hand in a helmet dataset among 1,500 of its
+images: at the same count of wrong pairs, DINOv2 found 12 of the 14 true copies
+where ResNet50 found 8, and alignment confirmed all 14 with at most one wrong
+pair. ResNet152 did worse than ResNet50 and is not offered.
+
+While it runs, the scan is a list of steps — list the images, load the model
+(GPU or CPU), read and describe every image, compare, line up — each with its
+count, speed and own clock, and the time left overall. It keeps running when
+you switch to another tab. The scan (`scripts/dedup_scan.py`, on the same
+Python as Auto-label) lists every pair close by any measure, with all its
+measures, so the **Sensitivity** presets and sliders regroup instantly without
+scanning again. Hashes, each model's features and the alignment verdicts are
+cached apart in `.labeler_dedup_cache/` beside the images, so a rescan — or
+the same images with another model — reads only what it has not seen: a
+rescan of 15,000 images takes seconds.
 
 Groups are listed strongest first; a group whose images sit in different
 splits is marked — a copy shared by train and test makes test scores look

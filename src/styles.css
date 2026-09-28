@@ -624,3 +624,43 @@ input[type=range].native::-webkit-slider-runnable-track{height:4px;border-radius
 .dup-split-train{background:color-mix(in srgb,var(--primary) 18%,transparent);color:var(--primary)}
 .dup-keys{padding:var(--sp-sm) var(--sp-lg);border-top:1px solid var(--border)}
 .dup-keys b{color:var(--text-secondary)}
+/* Duplicates: model picker, scan steps, summary */
+.dup-intro{justify-content:flex-start;align-items:stretch;max-width:980px;width:100%;margin:0 auto;overflow:auto}
+.dup-intro-top{display:flex;gap:var(--sp-lg);align-items:flex-start;color:var(--text-secondary)}
+.dup-intro-top .t-title{color:var(--text);margin-bottom:4px}
+.dup-section-title{text-transform:uppercase;letter-spacing:.06em;margin-top:var(--sp-md)}
+.dup-models{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:var(--sp-md)}
+.dup-model{display:flex;flex-direction:column;align-items:flex-start;gap:6px;text-align:start;padding:var(--sp-md) var(--sp-lg);border-radius:var(--r-lg);background:var(--surface);box-shadow:inset 0 0 0 1px var(--border);cursor:pointer;color:inherit;font:inherit;transition:box-shadow .12s,background .12s}
+.dup-model:hover{box-shadow:inset 0 0 0 1px var(--border-strong)}
+.dup-model.on{box-shadow:inset 0 0 0 2px var(--primary);background:color-mix(in srgb,var(--primary) 8%,var(--surface))}
+.dup-model.off{opacity:.5;pointer-events:none}
+.dup-model-head{display:flex;align-items:center;gap:var(--sp-sm);width:100%;justify-content:space-between}
+.dup-align .dup-model-head{justify-content:flex-start}
+.dup-model-name{font-size:13px;font-weight:600;color:var(--text)}
+.dup-cached{font-size:10px;font-weight:600;color:var(--success)}
+.dup-intro-go{display:flex;align-items:center;gap:var(--sp-lg);margin-top:var(--sp-md)}
+.dup-summary{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:var(--sp-sm);padding:var(--sp-sm) var(--sp-lg);font-size:12px;color:var(--text-secondary);border-bottom:1px solid var(--border)}
+.dup-summary>span:first-child{display:flex;align-items:center;gap:6px}
+.dup-summary b{color:var(--text)}
+.dup-stronger{display:flex;align-items:center;gap:4px;color:var(--text-tertiary)}
+.dup-kind-aligned{background:color-mix(in srgb,var(--success) 18%,transparent);color:var(--success)}
+.dup-none b{color:var(--text-secondary)}
+.dup-scan{flex:1;overflow:auto;display:flex;flex-direction:column;gap:var(--sp-lg);width:100%;max-width:760px;margin:0 auto;padding:var(--sp-3xl) var(--sp-xl)}
+.dup-scan-head{display:flex;align-items:center;gap:var(--sp-lg)}
+.dup-scan-spin{width:34px;height:34px;flex:none;border-radius:50%;border:3px solid var(--surface-3);border-top-color:var(--primary);animation:dupspin 1s linear infinite}
+@keyframes dupspin{to{transform:rotate(360deg)}}
+.dup-steps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.dup-step{display:flex;gap:var(--sp-md);padding:var(--sp-md) 0;position:relative}
+.dup-step:not(:last-child)::after{content:"";position:absolute;inset-inline-start:10px;top:34px;bottom:-6px;width:2px;background:var(--border)}
+.dup-step.done:not(:last-child)::after{background:var(--success)}
+.dup-step-mark{width:22px;height:22px;flex:none;border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:inset 0 0 0 2px var(--border-strong);background:var(--surface);z-index:1}
+.dup-step.done .dup-step-mark{background:var(--success);box-shadow:none;color:#fff}
+.dup-step.now .dup-step-mark{box-shadow:inset 0 0 0 2px var(--primary)}
+.dup-dot{width:8px;height:8px;border-radius:50%;background:var(--primary);animation:duppulse 1s ease-in-out infinite}
+@keyframes duppulse{50%{opacity:.3}}
+.dup-step-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:5px}
+.dup-step-line{display:flex;justify-content:space-between;gap:var(--sp-md);align-items:baseline}
+.dup-step-title{font-size:13px;color:var(--text-secondary)}
+.dup-step.now .dup-step-title{color:var(--text);font-weight:600}
+.dup-step.wait{opacity:.55}
+.dup-scan-foot{display:flex;align-items:center;gap:6px;padding:var(--sp-md);border-radius:var(--r-md);background:var(--surface)}

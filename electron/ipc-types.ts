@@ -70,11 +70,17 @@ export interface ReviewList { created: string; classes: string[]; items: ReviewI
 // ---- Duplicates tab (electron/dedup.ts, scripts/dedup_scan.py) ----
 /** The folder a project shows, and — for a YOLO split's images/ — its dataset's other splits. */
 export interface DedupScope { root: string; folder: string; splits: { name: string; dir: string }[]; }
-export interface DedupScanRequest { images: string[]; root: string; deep: boolean; maxHam?: number; minCos?: number; }
+/** The features model: none (hashes only), ResNet50, or DINOv2 ViT-B/14. */
+export type DedupModel = "none" | "resnet50" | "dinov2";
+export interface DedupScanRequest { images: string[]; root: string; model: DedupModel; align: boolean; maxHam?: number; minCos?: number; }
+/** A step of the scan (load | read | compare | align), or with phase "info" a key/value about it. */
+export interface DedupProgress { phase: string; done: number; total: number; key?: string; value?: string; }
+/** Which scans are cached beside a dataset: hashes, the models' features, alignment verdicts. */
+export interface DedupCacheInfo { hashes: boolean; models: string[]; align: string[]; }
 export interface DedupScanItem { path: string; width: number; height: number; bytes: number; error?: string; }
-/** [a, b, exact 0/1, hamming 0..64, cosine or -1, mirrored 0/1] — indices into items. */
-export type DedupPair = [number, number, number, number, number, number];
-export interface DedupScanResult { items: DedupScanItem[]; pairs: DedupPair[]; deep: boolean; deepError: string | null; }
+/** [a, b, exact 0/1, hamming 0..64, cosine or -1, mirrored 0/1, aligned 0/1] — indices into items. */
+export type DedupPair = [number, number, number, number, number, number, number];
+export interface DedupScanResult { items: DedupScanItem[]; pairs: DedupPair[]; model: DedupModel; deep: boolean; deepError: string | null; align: boolean; }
 export interface DedupApplyItem { image: string; keeper: string; match?: string; cosine?: number; hamming?: number; }
 export interface DedupApplyResult { batch: string | null; folder: string | null; moved: string[]; errors: string[]; }
 export interface DedupUndoResult { batch: string; restored: string[]; skipped: string[]; }
@@ -212,7 +218,8 @@ export interface ElectronAPI {
   dedupScope: (folder: string) => Promise<DedupScope>;
   dedupScan: (req: DedupScanRequest) => Promise<DedupScanResult>;
   cancelDedupScan: () => Promise<void>;
-  onDedupProgress: (cb: (p: { phase: string; done: number; total: number }) => void) => () => void;
+  onDedupProgress: (cb: (p: DedupProgress) => void) => () => void;
+  dedupCacheInfo: (root: string) => Promise<DedupCacheInfo>;
   dedupApply: (req: { root: string; items: DedupApplyItem[]; outputDir: string }) => Promise<DedupApplyResult>;
   dedupUndo: (root: string) => Promise<DedupUndoResult | null>;
   dedupLastBatch: (root: string) => Promise<{ batch: string; count: number } | null>;

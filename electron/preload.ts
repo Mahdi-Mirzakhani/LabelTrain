@@ -41,6 +41,7 @@ const api: ElectronAPI = {
     ipcRenderer.on("dedup:progress", handler);
     return () => ipcRenderer.removeListener("dedup:progress", handler);
   },
+  dedupCacheInfo: (root) => ipcRenderer.invoke("dedup:cacheInfo", root),
   dedupApply: (req) => ipcRenderer.invoke("dedup:apply", req),
   dedupUndo: (root) => ipcRenderer.invoke("dedup:undo", root),
   dedupLastBatch: (root) => ipcRenderer.invoke("dedup:lastBatch", root),
