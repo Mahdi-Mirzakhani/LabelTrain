@@ -11,6 +11,10 @@ import * as ann from "./annotation-io.ts";
 import { splitDataset, exportDataset } from "./dataset-split.ts";
 import { loadProgress, saveProgress } from "./progress.ts";
 import { loadReview } from "./review.ts";
+import {
+  applyDedup, cancelDedupScan, dedupScope, lastDedupBatch, loadNotDuplicates, runDedupScan,
+  saveNotDuplicates, undoDedup,
+} from "./dedup.ts";
 import { collectSystemInfo } from "./system-info.ts";
 import { LicenseManager } from "./license/manager.ts";
 import { LICENSE_CONFIG } from "./license/config.ts";
@@ -18,6 +22,8 @@ import type {
   AnnotationFormat,
   AutoLabelRequest,
   AutoLabelResult,
+  DedupApplyItem,
+  DedupScanRequest,
   ImageEntry,
   ProjectMeta,
   RecentProject,
@@ -349,6 +355,20 @@ function registerHandlers() {
   ipcMain.handle("progress:save", async (_e, folder: string, progress: ReviewProgress) => saveProgress(folder, progress));
   ipcMain.handle("review:load", async (_e, folder: string) => loadReview(folder));
 
+  // Duplicates tab — see electron/dedup.ts
+  ipcMain.handle("dedup:scope", async (_e, folder: string) => dedupScope(folder));
+  ipcMain.handle("dedup:scan", async (e, req: DedupScanRequest) => {
+    const script = await findScript("dedup_scan.py");
+    return runDedupScan(script, req, p => { if (!e.sender.isDestroyed()) e.sender.send("dedup:progress", p); });
+  });
+  ipcMain.handle("dedup:cancel", async () => cancelDedupScan());
+  ipcMain.handle("dedup:apply", async (_e, req: { root: string; items: DedupApplyItem[]; outputDir: string }) =>
+    applyDedup(req.root, req.items, req.outputDir));
+  ipcMain.handle("dedup:undo", async (_e, root: string) => undoDedup(root));
+  ipcMain.handle("dedup:lastBatch", async (_e, root: string) => lastDedupBatch(root));
+  ipcMain.handle("dedup:loadIgnore", async (_e, root: string) => loadNotDuplicates(root));
+  ipcMain.handle("dedup:saveIgnore", async (_e, root: string, pairs: [string, string][]) => saveNotDuplicates(root, pairs));
+
   ipcMain.handle("project:listRecent", async (): Promise<RecentProject[]> => {
     const recent = await loadRecent();
     return await Promise.all(recent.map(async project => {
@@ -591,6 +611,19 @@ async function runYoloInference(
   } finally {
     autoLabelRunning = false;
   }
+}
+
+/** A helper script shipped in scripts/ — beside the dev tree, the exe, or the packaged resources. */
+async function findScript(name: string): Promise<string> {
+  const candidates = [
+    path.join(process.cwd(), "scripts", name),
+    path.join(path.dirname(app.getPath("exe")), "scripts", name),
+    path.join(process.resourcesPath || "", "scripts", name),
+  ];
+  for (const s of candidates) {
+    try { await fs.access(s); return s; } catch { /* next */ }
+  }
+  throw new Error(`${name} not found. Expected at scripts/${name} beside the app.`);
 }
 
 async function runYoloInferenceInner(

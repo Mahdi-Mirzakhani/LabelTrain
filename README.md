@@ -194,6 +194,51 @@ The renderer always works with normalized 0..1 coordinates internally. At the IO
 
 The output directory is configurable in **Settings → Output directory**. Empty means "same folder as the image."
 
+## The tabs
+
+| Tab | What it is for |
+| --- | --- |
+| **Annotate** | Drawing, fixing and deleting boxes, image by image |
+| **Dataset** | An overview of the open folder: counts, class distribution, a searchable table of images |
+| **Train** | Splitting into train / val / test and exporting a bundle with `dataset.yaml` and a starter training script |
+| **Deploy** | Packaging the project and model for use elsewhere |
+| **Duplicates** | Finding copies and look-alikes, and moving the extras out of the dataset |
+
+## Duplicates
+
+**Duplicates** scans the open folder — or, when it is a YOLO split's `images/`,
+the whole dataset (train, valid, test) — and finds three kinds of repeat:
+
+| Kind | What | Measured by |
+| --- | --- | --- |
+| Exact copy | the same file twice | BLAKE2 of the file |
+| Copy | resized, re-saved, mirrored or letterboxed | 64-bit DCT perceptual hash, mirrored too, after cropping flat borders |
+| Look-alike | cropped, zoomed, recoloured, the next frame of a video | cosine of ResNet50 features (needs torch + torchvision) |
+
+The scan (`scripts/dedup_scan.py`, on the same Python as Auto-label) lists every
+pair close by any measure, with all its measures, so the **Sensitivity**
+presets and sliders regroup instantly without scanning again. Results per
+image are cached in `.labeler_dedup_cache/` beside the images: a rescan of
+15,000 images takes seconds, the first one about five minutes on a GPU.
+
+Groups are listed strongest first; a group whose images sit in different
+splits is marked — a copy shared by train and test makes test scores look
+better than they are. Each group opens side by side (or as a flicker, `C`),
+with the label boxes (`L`) and each image's split, size, file size, box count
+and distance. One image per group is suggested to stay: the one with boxes,
+then the one in test/valid (so evaluation keeps its size and the leak into
+train goes — **Prefer keeping the train copy** turns that round), then more
+boxes, pixels, bytes. Click a card to keep or drop it, or press `1`–`9`.
+
+**Move extras out** (`Enter`), per group or for all of them, never deletes: the
+images and every label file of theirs move to `<root>.duplicates/<stamp>-labeltrain/`
+beside the dataset — outside it, as Ultralytics reads `images/` recursively —
+logged in `manifest.jsonl`, and **Undo last removal** (`Ctrl+Z`) puts them back.
+**Not duplicates** (`I`) remembers a group in `.labeler_dedup.json` so it is not
+grouped again. `J`/`K` walk the groups. COCO projects: the images move, but
+their entries stay in `coco_dataset.json`. See `electron/dedup.ts`,
+`src/lib/dedup.ts` and `tests/phase12-dedup.ts`.
+
 ## Review list
 
 An audit can tell the app which images most need a human look. It writes

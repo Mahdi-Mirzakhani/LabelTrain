@@ -87,6 +87,17 @@ export interface ReviewFlag {
 export interface ReviewItem { name: string; score: number; flags: ReviewFlag[]; }
 export interface ReviewList { created: string; classes: string[]; items: ReviewItem[]; }
 
+// ---- Duplicates tab (mirrors electron/ipc-types.ts) ----
+export interface DedupScope { root: string; folder: string; splits: { name: string; dir: string }[]; }
+export interface DedupScanRequest { images: string[]; root: string; deep: boolean; maxHam?: number; minCos?: number; }
+export interface DedupScanItem { path: string; width: number; height: number; bytes: number; error?: string; }
+/** [a, b, exact 0/1, hamming 0..64, cosine or -1, mirrored 0/1] — indices into items. */
+export type DedupPair = [number, number, number, number, number, number];
+export interface DedupScanResult { items: DedupScanItem[]; pairs: DedupPair[]; deep: boolean; deepError: string | null; }
+export interface DedupApplyItem { image: string; keeper: string; match?: string; cosine?: number; hamming?: number; }
+export interface DedupApplyResult { batch: string | null; folder: string | null; moved: string[]; errors: string[]; }
+export interface DedupUndoResult { batch: string; restored: string[]; skipped: string[]; }
+
 export interface ElectronAPI {
   minimizeWindow: () => Promise<void>;
   toggleMaximizeWindow: () => Promise<boolean>;
@@ -99,6 +110,15 @@ export interface ElectronAPI {
   saveProject: (project: ProjectMeta) => Promise<{ ok: boolean; error?: string }>;
   loadProgress: (folder: string) => Promise<ReviewProgress>;
   loadReview: (folder: string) => Promise<ReviewList | null>;
+  dedupScope: (folder: string) => Promise<DedupScope>;
+  dedupScan: (req: DedupScanRequest) => Promise<DedupScanResult>;
+  cancelDedupScan: () => Promise<void>;
+  onDedupProgress: (cb: (p: { phase: string; done: number; total: number }) => void) => () => void;
+  dedupApply: (req: { root: string; items: DedupApplyItem[]; outputDir: string }) => Promise<DedupApplyResult>;
+  dedupUndo: (root: string) => Promise<DedupUndoResult | null>;
+  dedupLastBatch: (root: string) => Promise<{ batch: string; count: number } | null>;
+  loadNotDuplicates: (root: string) => Promise<[string, string][]>;
+  saveNotDuplicates: (root: string, pairs: [string, string][]) => Promise<void>;
   /** Move an image and all its label files to the Recycle Bin. */
   deleteImage: (req: { imagePath: string; outputDir: string; format: AnnotationFormat }) =>
     Promise<{ ok: boolean; removed: string[]; error?: string }>;

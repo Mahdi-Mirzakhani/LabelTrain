@@ -10,6 +10,7 @@ import { LicenseGate, useLicense } from "./components/LicenseGate";
 import { CanvasStage } from "./components/Canvas";
 import { FileList, ToolRail, ChipBar, AnnotateInspector } from "./components/Annotate";
 import { DatasetRoute, TrainRoute, DeployRoute } from "./components/Tabs";
+import { DuplicatesRoute } from "./components/Duplicates";
 import { applyLang, t } from "./i18n";
 import { DEFAULT_CLASSES, PALETTE } from "./data";
 import {
@@ -32,7 +33,7 @@ import type {
 } from "./types";
 
 type Screen = "onboarding" | "projects" | "app";
-type Tab = "annotate" | "dataset" | "train" | "deploy";
+type Tab = "annotate" | "dataset" | "train" | "deploy" | "duplicates";
 
 /**
  * How annotations are addressed to disk. `plan.format` is used for BOTH saving
@@ -984,6 +985,26 @@ function AppShell() {
     }
   }, [lang, outputDir, savePlan, flushHistory, pushToast]);
 
+  // Images the Duplicates tab moved out of the open folder: drop them from the
+  // list as deleteImage does — no undo snapshot may bring back a file that is
+  // gone, and leaving one must not mark it reviewed.
+  const dropImages = useCallback((paths: string[]) => {
+    const key = (p: string) => p.replaceAll("\\", "/").toLowerCase();
+    const gone = new Set(paths.map(key));
+    const before = imagesRef.current;
+    const keep = before.filter(im => !gone.has(key(im.path)));
+    if (keep.length === before.length) return;
+    flushHistory();
+    undoStack.current = [];
+    redoStack.current = [];
+    prevNameRef.current = null;
+    const curName = before[curIdxRef.current]?.name;
+    const idx = keep.findIndex(im => im.name === curName);
+    setImages(keep);
+    setCurIdx(idx >= 0 ? idx : Math.min(curIdxRef.current, Math.max(0, keep.length - 1)));
+    setSelId(null);
+  }, [flushHistory]);
+
   const deleteSel = useCallback(() => {
     if (!selId) return;
     setBoxes(bs => bs.filter(b => b.id !== selId));
@@ -1272,6 +1293,9 @@ function AppShell() {
       if (typing) return;
       if (screen !== "app") return;
       // Escape still closes whatever is on top; everything else waits.
+      // The Duplicates tab has its own keys (J/K, Enter, Delete, Ctrl+Z…) —
+      // the canvas shortcuts would otherwise act on an image nobody can see.
+      if (tab === "duplicates" && !overlayOpen && !cmdk) return;
       if (overlayOpen || cmdk) {
         if (e.key === "Escape") {
           setAutoLabel(false); setSplit(false); setClassMgr(false);
@@ -1376,6 +1400,7 @@ function AppShell() {
     { id: "dataset", label: t("Dataset"), icon: "layers" },
     { id: "train", label: t("Train"), icon: "cpu" },
     { id: "deploy", label: t("Deploy"), icon: "rocket" },
+    { id: "duplicates", label: t("Duplicates"), icon: "copy" },
   ];
   const labeledCount = images.filter(i => i.labeled).length;
   const pct = images.length ? Math.round(labeledCount / images.length * 100) : 0;
@@ -1541,6 +1566,12 @@ function AppShell() {
         />
       )}
       {tab === "deploy" && <DeployRoute project={project} classes={classes} pushToast={pushToast} />}
+      {tab === "duplicates" && (
+        <DuplicatesRoute project={project} classes={classes} classColor={classColor}
+          format={savePlan.format} outputDir={outputDir} fa={lang === "fa"} pushToast={pushToast}
+          beforeChange={flushAllDirty} onRemoved={dropImages}
+          onRestored={() => { if (project) void openFolder(project.imageDir, project.name); }} />
+      )}
 
       {/* Status bar */}
       <div className="statusbar">

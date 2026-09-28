@@ -587,6 +587,29 @@ async function deleteExisting(req: SaveAnnotationsRequest): Promise<void> {
 // ============================================================
 
 /**
+ * Every per-image label file of an image that exists on disk: wherever this
+ * module would read one (explicit output dir, sibling labels/ dir, the image's
+ * own folder) or write an OBB/HBB companion (labels_obb / labels_hbb), in any
+ * per-image format. COCO lives in one shared json and is not listed.
+ */
+export async function labelFilesOf(imagePath: string, outputDir: string): Promise<string[]> {
+  const stem = path.basename(imagePath, path.extname(imagePath));
+  const dirs = new Set(readDirs(imagePath, outputDir).map(d => path.resolve(d)));
+  const primary = await writeDirFor(imagePath, outputDir);
+  for (const suffix of ["_obb", "_hbb"]) {
+    dirs.add(path.resolve(path.dirname(primary), path.basename(primary) + suffix));
+  }
+  const found: string[] = [];
+  for (const dir of dirs) {
+    for (const ext of [".txt", ".xml", ".csv"]) {
+      const f = path.join(dir, stem + ext);
+      if (await exists(f)) found.push(f);
+    }
+  }
+  return found;
+}
+
+/**
  * Remove an image and every annotation of it: the label file wherever this
  * module would read one from (explicit output dir, sibling labels/ dir, the
  * image's own folder) or write a companion to (labels_obb / labels_hbb), and
@@ -611,19 +634,9 @@ export async function deleteImageAndLabels(
     } catch (err) {
       return { ok: false, removed, error: err instanceof Error ? err.message : String(err) };
     }
-    const stem = path.basename(imagePath, path.extname(imagePath));
-    const dirs = new Set(readDirs(imagePath, outputDir).map(d => path.resolve(d)));
-    const primary = await writeDirFor(imagePath, outputDir);
-    for (const suffix of ["_obb", "_hbb"]) {
-      dirs.add(path.resolve(path.dirname(primary), path.basename(primary) + suffix));
-    }
     const failed: string[] = [];
-    for (const dir of dirs) {
-      for (const ext of [".txt", ".xml", ".csv"]) {
-        const f = path.join(dir, stem + ext);
-        if (!(await exists(f))) continue;
-        try { await remove(f); removed.push(f); } catch { failed.push(f); }
-      }
+    for (const f of await labelFilesOf(imagePath, outputDir)) {
+      try { await remove(f); removed.push(f); } catch { failed.push(f); }
     }
     if (format === "COCO") {
       const cocoPath = annotationFileFor(imagePath, "COCO", outputDir);

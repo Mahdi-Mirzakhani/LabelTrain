@@ -33,6 +33,19 @@ const api: ElectronAPI = {
   loadProgress: (folder: string) => ipcRenderer.invoke("progress:load", folder),
   saveProgress: (folder: string, progress: ReviewProgress) => ipcRenderer.invoke("progress:save", folder, progress),
   loadReview: (folder: string) => ipcRenderer.invoke("review:load", folder),
+  dedupScope: (folder) => ipcRenderer.invoke("dedup:scope", folder),
+  dedupScan: (req) => ipcRenderer.invoke("dedup:scan", req),
+  cancelDedupScan: () => ipcRenderer.invoke("dedup:cancel"),
+  onDedupProgress: (cb) => {
+    const handler = (_e: unknown, p: Parameters<typeof cb>[0]) => cb(p);
+    ipcRenderer.on("dedup:progress", handler);
+    return () => ipcRenderer.removeListener("dedup:progress", handler);
+  },
+  dedupApply: (req) => ipcRenderer.invoke("dedup:apply", req),
+  dedupUndo: (root) => ipcRenderer.invoke("dedup:undo", root),
+  dedupLastBatch: (root) => ipcRenderer.invoke("dedup:lastBatch", root),
+  loadNotDuplicates: (root) => ipcRenderer.invoke("dedup:loadIgnore", root),
+  saveNotDuplicates: (root, pairs) => ipcRenderer.invoke("dedup:saveIgnore", root, pairs),
   listRecentProjects: () => ipcRenderer.invoke("project:listRecent"),
   clearRecentProjects: () => ipcRenderer.invoke("project:clearRecent"),
   removeRecentProject: (imageDir: string) => ipcRenderer.invoke("project:removeRecent", imageDir),
