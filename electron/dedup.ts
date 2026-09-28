@@ -148,10 +148,24 @@ async function move(from: string, to: string): Promise<void> {
   }
 }
 
-function stamp(): string {
-  const d = new Date();
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+/** 20260928-130831-042: to the millisecond, so batch names sort in the order they were made. */
+function stamp(d = new Date()): string {
+  const p = (n: number, w = 2) => String(n).padStart(w, "0");
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}-${p(d.getMilliseconds(), 3)}`;
+}
+
+/**
+ * A batch folder no earlier move-out has used. Two move-outs within one second
+ * (Enter, Enter on the next group) used to share one, and the second manifest
+ * overwrote the first: those images stayed in quarantine with no record, so
+ * Undo could not bring them back.
+ */
+async function freshBatch(parent: string): Promise<string> {
+  let t = Date.now();
+  for (;;) {
+    const name = stamp(new Date(t)) + BATCH_SUFFIX;
+    try { await fs.access(path.join(parent, name)); t++; } catch { return name; }
+  }
 }
 
 /** Where a file goes inside a batch: its path relative to the dataset root. */
@@ -165,7 +179,7 @@ export async function applyDedup(
   items: { image: string; keeper: string; match?: string; cosine?: number; hamming?: number }[],
   outputDir: string,
 ): Promise<DedupApplyResult> {
-  const batch = stamp() + BATCH_SUFFIX;
+  const batch = await freshBatch(`${root}.duplicates`);
   const batchDir = path.join(`${root}.duplicates`, batch);
   const lines: string[] = [];
   const moved: string[] = [];

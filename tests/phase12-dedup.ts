@@ -214,6 +214,18 @@ try {
     check(await exists(path.join(`${ds}.duplicates`, res.batch!, "images", "b.jpg")), "the stored copy stays in the batch");
   }
 
+  phase("two move-outs in the same second get two batches, undone last first");
+  {
+    const ds = path.join(root, "ds4");
+    const a = path.join(ds, "images", "a.jpg"), b = path.join(ds, "images", "b.jpg");
+    await put(a, "a"); await put(b, "b");
+    const r1 = await applyDedup(ds, [{ image: a, keeper: "k" }], "");
+    const r2 = await applyDedup(ds, [{ image: b, keeper: "k" }], "");
+    check(r1.batch !== r2.batch && r1.batch! < r2.batch!, "two batches, in order", [r1.batch, r2.batch]);
+    eq((await undoDedup(ds))?.restored, [b], "undo brings back the second first");
+    eq((await undoDedup(ds))?.restored, [a], "then the first — its record was not overwritten");
+  }
+
   phase("not-duplicates list round-trips");
   {
     const ds = path.join(root, "ds");
