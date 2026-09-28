@@ -7,7 +7,9 @@ import { SHORTCUTS } from "../data";
 import { clampRect } from "../lib/boxes";
 import { normalizeAngle, toDeg, toRad } from "../lib/obb";
 import { matchesFilter, type ListFilter } from "../lib/progress";
+import { flagSummary } from "../lib/review";
 import type { ClassDef, ImageItem, NBox } from "../types";
+import type { ReviewItem } from "../electron-api";
 
 interface FileListProps {
   images: ImageItem[];
@@ -26,6 +28,16 @@ interface FileListProps {
   reviewed?: Set<string>;
   /** Where the previous session stopped. */
   lastStop?: string | null;
+  /**
+   * The rows to show, as image indices in display order. App computes it (see
+   * lib/review.ts listOrder) because next / previous walk the same order; when
+   * absent the list filters by itself, in folder order.
+   */
+  order?: number[];
+  /** The audit's review list by file name; null/absent when the folder has none. */
+  review?: Map<string, ReviewItem> | null;
+  reviewClasses?: string[];
+  fa?: boolean;
 }
 
 const NO_REVIEWS = new Set<string>();
@@ -33,19 +45,24 @@ const NO_REVIEWS = new Set<string>();
 export function FileList({
   images, curIdx, setCurIdx, search, setSearch, filter, setFilter,
   classes, classFilter, setClassFilter, classNameOf, loading,
-  reviewed = NO_REVIEWS, lastStop = null,
+  reviewed = NO_REVIEWS, lastStop = null, order, review = null, fa = false,
 }: FileListProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [scrollTop, setScrollTop] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const rowHeight = 52;
   const overscan = 12;
-  const filtered = useMemo(() => images
-    .map((im, i) => ({ im, i }))
-    .filter(({ im }) => im.name.toLowerCase().includes(search.toLowerCase()))
-    .filter(({ im }) => matchesFilter(filter, im.labeled, reviewed.has(im.name)))
-    .filter(({ im }) => !classFilter || im.boxes.some(b => classNameOf(b.cls) === classFilter)),
-    [images, search, filter, classFilter, classNameOf, reviewed]);
+  const filtered = useMemo(() => order
+    ? order.map(i => ({ im: images[i], i })).filter(({ im }) => im)
+    : images
+      .map((im, i) => ({ im, i }))
+      .filter(({ im }) => im.name.toLowerCase().includes(search.toLowerCase()))
+      .filter(({ im }) => matchesFilter(filter, im.labeled, reviewed.has(im.name), !!review?.has(im.name)))
+      .filter(({ im }) => !classFilter || im.boxes.some(b => classNameOf(b.cls) === classFilter)),
+  [order, images, search, filter, classFilter, classNameOf, reviewed, review]);
+  const toReviewCount = useMemo(
+    () => review ? images.filter(im => review.has(im.name) && !reviewed.has(im.name)).length : 0,
+    [images, review, reviewed]);
   const labeledCount = useMemo(() => images.filter(i => i.labeled).length, [images]);
   const reviewedCount = useMemo(() => images.filter(i => reviewed.has(i.name)).length, [images, reviewed]);
   const start = Math.max(0, Math.floor(scrollTop / rowHeight) - overscan);
@@ -66,6 +83,7 @@ export function FileList({
   const labels: Record<ListFilter, string> = {
     all: t("All images"), labeled: t("Labeled"), unlabeled: t("Unlabeled"),
     reviewed: t("Reviewed"), unreviewed: t("Not reviewed"),
+    toReview: `${t("To review")} (${toReviewCount})`, flagged: `${t("All flagged")} (${review?.size ?? 0})`,
   };
 
   return (
@@ -99,6 +117,18 @@ export function FileList({
                   <span>{labels[f]}</span>
                 </div>
               ))}
+              {review && (
+                <>
+                  <div className="cmdk-group">{t("Review list")}</div>
+                  {(["toReview", "flagged"] as const).map(f => (
+                    <div key={f} className="menu-item" onClick={() => { setFilter(f); setMenuOpen(false); }}>
+                      <Icon name={filter === f ? "check" : "dot"} size={14}
+                        style={{ opacity: filter === f ? 1 : 0 }} />
+                      <span>{labels[f]}</span>
+                    </div>
+                  ))}
+                </>
+              )}
               {classes.length > 0 && (
                 <>
                   <div className="cmdk-group">{t("Class")}</div>
@@ -148,7 +178,9 @@ export function FileList({
                 <div className="file-meta">
                   <div className="file-name">{im.name}</div>
                   <div className="file-sub">
-                    {im.hydrated && im.labeled ? `${im.boxes.length} ${t("boxes")}` : im.hydrated ? t("unlabeled") : "…"} · {im.modified}
+                    {review?.has(im.name)
+                      ? <span className="file-flag">⚠ {flagSummary(review.get(im.name)!.flags, fa)}</span>
+                      : <>{im.hydrated && im.labeled ? `${im.boxes.length} ${t("boxes")}` : im.hydrated ? t("unlabeled") : "…"} · {im.modified}</>}
                   </div>
                 </div>
                 {lastStop === im.name && (
@@ -160,7 +192,9 @@ export function FileList({
         )}
       </div>
       <div className="list-foot">
-        <span>{curIdx + 1}/{images.length} {t("images")}</span>
+        <span>{filtered.length !== images.length && filtered.some(r => r.i === curIdx)
+          ? `${filtered.findIndex(r => r.i === curIdx) + 1}/${filtered.length}`
+          : `${curIdx + 1}/${images.length} ${t("images")}`}</span>
         <span className="row" style={{ gap: 3 }} title={t("Reviewed")}>
           <Icon name="eye" size={11} />{reviewedCount}
         </span>

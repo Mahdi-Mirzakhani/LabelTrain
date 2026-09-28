@@ -54,6 +54,19 @@ export interface ReviewProgress {
   last: string | null;  // file name
 }
 
+/** Why an audit flagged an image (see electron/review.ts). */
+export type ReviewKind = "missing" | "too big" | "wrong class" | "empty";
+export interface ReviewFlag {
+  kind: ReviewKind;
+  cls: number;                             // class index the flag is about
+  conf: number;                            // detector confidence, 0 when none
+  box: [number, number, number, number];   // normalised x0, y0, x1, y1
+  inner?: [number, number, number, number]; // "too big": the object inside
+  other?: number;                          // "wrong class": the class it looks like
+}
+export interface ReviewItem { name: string; score: number; flags: ReviewFlag[]; }
+export interface ReviewList { created: string; classes: string[]; items: ReviewItem[]; }
+
 export interface SaveAnnotationsRequest {
   imagePath: string;
   annotations: BBox[];
@@ -183,6 +196,7 @@ export interface ElectronAPI {
   saveProject: (project: ProjectMeta) => Promise<{ ok: boolean; error?: string }>;
   loadProgress: (folder: string) => Promise<ReviewProgress>;
   saveProgress: (folder: string, progress: ReviewProgress) => Promise<{ ok: boolean; error?: string }>;
+  loadReview: (folder: string) => Promise<ReviewList | null>;
   listRecentProjects: () => Promise<RecentProject[]>;
   clearRecentProjects: () => Promise<void>;
   removeRecentProject: (imageDir: string) => Promise<void>;

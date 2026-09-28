@@ -194,6 +194,29 @@ The renderer always works with normalized 0..1 coordinates internally. At the IO
 
 The output directory is configurable in **Settings → Output directory**. Empty means "same folder as the image."
 
+## Review list
+
+An audit can tell the app which images most need a human look. It writes
+`.labeler_review.json` beside the images (the helmet project's
+`datasets/label_audit.py` does; the shape is documented at the top of
+`electron/review.ts`): for each flagged image a score and its flags — an
+object nobody labelled, a box far bigger than what it holds, a label that
+looks like the other class, a box with nothing under it — each with where in
+the image it is. When a folder has one:
+
+- **Filter → To review** lists the flagged images you have not reviewed yet,
+  most urgent first; **All flagged** lists all of them. Next / previous
+  (buttons, `N`/`P`, arrow keys) walk that list, so you go from one flagged
+  image to the next, and each one leaves *To review* once you move on from it.
+- The row says why it was flagged (`⚠ 2 unlabelled · 1 too big`), and the
+  canvas marks each spot with a dashed box and a short question
+  ("unlabelled head?"). The marks never take a click; `H` (or **Hints**) hides
+  them.
+- Opening the folder says how many are left.
+
+The app never writes the file; re-running the audit after a round of fixes
+replaces it. See `tests/phase11-review.ts`.
+
 ## Deleting an image
 
 **Delete image** in the bar above the canvas (or `Ctrl + Del`, or the command
@@ -281,7 +304,8 @@ width. See `tests/phase7-obb.ts`.
 | `V` | Pointer tool |
 | `B` | Box tool |
 | `N` / `P` | Next / Previous image |
-| `→` `↓` / `←` `↑` | Next / Previous image *(Annotate tab)* |
+| `→` `↓` / `←` `↑` | Next / Previous image *(Annotate tab)* — within the filtered list |
+| `H` | Show / hide the review list's hints on the canvas |
 | `Del` / `Backspace` | Delete selected box |
 | `Ctrl/⌘ + Del` (`⌘ + Backspace`) | Delete the image and its labels (to the Recycle Bin) |
 | `Esc` | Deselect |

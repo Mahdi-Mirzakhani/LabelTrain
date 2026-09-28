@@ -16,8 +16,11 @@ export interface Progress {
  */
 export const MIN_LOOK_MS = 400;
 
-/** File-list filters: the labelling status plus the review status. */
-export type ListFilter = "all" | "labeled" | "unlabeled" | "reviewed" | "unreviewed";
+/**
+ * File-list filters: the labelling status, the review status, and the audit's
+ * review list — "toReview" is flagged and not yet looked at, "flagged" all of it.
+ */
+export type ListFilter = "all" | "labeled" | "unlabeled" | "reviewed" | "unreviewed" | "toReview" | "flagged";
 
 /** Where to reopen a folder: the image the user was on last, else the first. */
 export function resumeIndex(names: string[], last: string | null): number {
@@ -40,12 +43,17 @@ export function stepProgress(p: Progress, prev: string | null, cur: string): Pro
   };
 }
 
-export function matchesFilter(filter: ListFilter, labeled: boolean, reviewed: boolean): boolean {
+export function matchesFilter(filter: ListFilter, labeled: boolean, reviewed: boolean, flagged = false): boolean {
   switch (filter) {
     case "all": return true;
     case "labeled": return labeled;
     case "unlabeled": return !labeled;
     case "reviewed": return reviewed;
     case "unreviewed": return !reviewed;
+    case "toReview": return flagged && !reviewed;
+    case "flagged": return flagged;
   }
 }
+
+/** Filters that list the audit's images by urgency rather than in folder order. */
+export const RANKED_FILTERS: ReadonlySet<ListFilter> = new Set(["toReview", "flagged"]);

@@ -20,7 +20,11 @@ import {
 } from "./settings-store";
 import { clearThumbs } from "./lib/thumbs";
 import { normalizeAngle, toRad } from "./lib/obb";
-import { MIN_LOOK_MS, resumeIndex, stepProgress, type ListFilter, type Progress } from "./lib/progress";
+import {
+  MIN_LOOK_MS, RANKED_FILTERS, matchesFilter, resumeIndex, stepProgress, type ListFilter, type Progress,
+} from "./lib/progress";
+import { listOrder, stepInOrder } from "./lib/review";
+import type { ReviewItem } from "./electron-api";
 import { projectTitle } from "./lib/projects";
 import type {
   ClassDef, CmdItem, Density, ImageItem, LangCode, NBox, ObbSaveMode,
@@ -190,6 +194,12 @@ function AppShell() {
   // one, so the list can show how far the review had got.
   const [progress, setProgress] = useState<Progress | null>(null);
   const [lastStop, setLastStop] = useState<string | null>(null);
+  // The audit's review list for the open folder (.labeler_review.json, read by
+  // electron/review.ts), by file name; null when the folder has none. Its flags
+  // are drawn on the canvas as dashed hints, H hides them.
+  const [reviewList, setReviewList] = useState<Map<string, ReviewItem> | null>(null);
+  const [reviewClasses, setReviewClasses] = useState<string[]>([]);
+  const [showHints, setShowHints] = useState(true);
   const progressFolder = useRef<string | null>(null);
   const progressRef = useRef(progress);
   progressRef.current = progress;
@@ -376,11 +386,30 @@ function AppShell() {
     return () => window.clearTimeout(id);
   }, [progress, saveProgressNow]);
 
+  // The rows the file list shows, in the order it shows them. Next / previous
+  // (buttons, N/P, arrow keys) walk this order, so with "To review" on they go
+  // from one flagged image to the next instead of through the whole folder.
+  const ranked = RANKED_FILTERS.has(filter);
+  const order = useMemo(() => {
+    const q = search.toLowerCase();
+    const seen = progress?.reviewed;
+    return listOrder(images.length, i => {
+      const im = images[i];
+      return im.name.toLowerCase().includes(q)
+        && matchesFilter(filter, im.labeled, !!seen?.has(im.name), !!reviewList?.has(im.name))
+        && (!classFilter || im.boxes.some(b => classNameOf(b.cls) === classFilter));
+    }, ranked ? i => reviewList?.get(images[i].name)?.score ?? 0 : undefined);
+  }, [images, search, filter, classFilter, classNameOf, progress, reviewList, ranked]);
+  const orderRef = useRef(order);
+  orderRef.current = order;
+  const rankedRef = useRef(ranked);
+  rankedRef.current = ranked;
+
   // navigation
   const go = useCallback((d: number) => {
-    setCurIdx(i => Math.max(0, Math.min(images.length - 1, i + d)));
+    setCurIdx(i => stepInOrder(orderRef.current, i, d, rankedRef.current));
     setSelId(null);
-  }, [images.length]);
+  }, []);
   const openImageInAnnotate = useCallback((i: number) => {
     setCurIdx(i); setTab("annotate");
   }, []);
@@ -399,6 +428,7 @@ function AppShell() {
     prevNameRef.current = null;
     setProgress(null);
     setLastStop(null);
+    setReviewList(null);
     setImages([]);
     setCurIdx(0);
     setSelId(null);
@@ -447,9 +477,10 @@ function AppShell() {
 
       // 2. Return the directory listing immediately. Dimensions, timestamps,
       // and annotations are loaded only when an image is selected.
-      const [list, saved] = await Promise.all([
+      const [list, saved, audit] = await Promise.all([
         listImagesInFolder(folder),
         window.api!.loadProgress(folder).catch(() => ({ reviewed: [] as string[], last: null })),
+        window.api!.loadReview(folder).catch(() => null),
       ]);
       const classNames = effectiveClasses.map(c => c.name);
       const start = resumeIndex(list.map(im => im.name), saved.last);
@@ -526,6 +557,10 @@ function AppShell() {
       progressFolder.current = folder;
       setProgress({ reviewed: new Set(saved.reviewed), last: list[start]?.name ?? null });
       setLastStop(resumed ? saved.last : null);
+      const present = new Set(list.map(im => im.name));
+      const flagged = audit ? audit.items.filter(it => present.has(it.name)) : [];
+      setReviewList(audit ? new Map(flagged.map(it => [it.name, it])) : null);
+      setReviewClasses(audit?.classes.length ? audit.classes : classNames);
       setCurIdx(start);
       setSelId(null);
       setLoading(false);
@@ -556,9 +591,13 @@ function AppShell() {
 
       pushToast({ icon: "folder", msg: `Opened ${projectTitle(meta.name, folder)} — ${list.length} image${list.length === 1 ? "" : "s"}` });
       if (resumed) {
-        const names = new Set(list.map(im => im.name));
-        const done = saved.reviewed.filter(n => names.has(n)).length;
+        const done = saved.reviewed.filter(n => present.has(n)).length;
         pushToast({ icon: "eye", msg: `${t("Resumed at")} ${saved.last} — ${done}/${list.length} ${t("reviewed")}` });
+      }
+      if (audit) {
+        const seen = new Set(saved.reviewed);
+        const left = flagged.filter(it => !seen.has(it.name)).length;
+        pushToast({ icon: "alert", msg: `${t("Review list")}: ${left} ${t("to review")} (${flagged.length} ${t("flagged")}) — ${t("Filter → To review")}` });
       }
 
       // YOLO stores class NUMBERS, not names. If this dataset shipped no class
@@ -1278,6 +1317,7 @@ function AppShell() {
       else if (k === "b") setTool("box");
       else if (k === "n") go(1);
       else if (k === "p") go(-1);
+      else if (k === "h" && tab === "annotate") setShowHints(v => !v);
       // Arrow keys follow the arrows on screen: → / ↓ next, ← / ↑ previous
       // (↓ is also "the next row" in the file list). Annotate only, and
       // preventDefault so the list and canvas don't scroll as well.
@@ -1413,20 +1453,32 @@ function AppShell() {
             filter={filter} setFilter={setFilter}
             classes={classes} classFilter={classFilter} setClassFilter={setClassFilter}
             classNameOf={classNameOf} loading={loading}
-            reviewed={progress?.reviewed} lastStop={lastStop} />
+            reviewed={progress?.reviewed} lastStop={lastStop}
+            order={order} review={reviewList} reviewClasses={reviewClasses} fa={lang === "fa"} />
           <div className="workspace">
             <div className="wsbar">
               <div className="row gap-md">
-                <button className="iconbtn" onClick={() => go(-1)} disabled={curIdx === 0}
+                <button className="iconbtn" onClick={() => go(-1)} disabled={stepInOrder(order, curIdx, -1, ranked) === curIdx}
                   title={`${t("Previous image")} (P, ←)`}><Icon name="chevLeft" size={18} /></button>
                 <div className="col" style={{ alignItems: "center" }}>
                   <span className="t-body-strong mono">{cur ? cur.name : "—"}</span>
-                  <span className="t-caption tnum">{curIdx + 1} {t("of")} {images.length}</span>
+                  <span className="t-caption tnum">
+                    {order.length !== images.length && order.includes(curIdx)
+                      ? <>{order.indexOf(curIdx) + 1} {t("of")} {order.length} · {curIdx + 1}/{images.length}</>
+                      : <>{curIdx + 1} {t("of")} {images.length}</>}
+                  </span>
                 </div>
-                <button className="iconbtn" onClick={() => go(1)} disabled={curIdx >= images.length - 1}
+                <button className="iconbtn" onClick={() => go(1)} disabled={stepInOrder(order, curIdx, 1, ranked) === curIdx}
                   title={`${t("Next image")} (N, →)`}><Icon name="chevRight" size={18} /></button>
               </div>
               <div className="row gap-sm">
+                {reviewList && (
+                  <button className={"btn sm " + (showHints ? "btn-secondary" : "btn-ghost")} onClick={() => setShowHints(v => !v)}
+                    title={`${t("Show where the audit found a problem")} (H)`}>
+                    <Icon name="alert" size={14} />{t("Hints")}
+                    {cur && reviewList.get(cur.name) ? ` ${reviewList.get(cur.name)!.flags.length}` : ""}
+                  </button>
+                )}
                 <button className="btn btn-secondary sm" onClick={() => setAutoLabel(true)}>
                   <Icon name="sparkles" size={14} />{t("Auto-label")}
                 </button>
@@ -1449,7 +1501,9 @@ function AppShell() {
                 obb={obb} zoom={zoom} setZoom={setZoom}
                 classColor={classColor} classNameOf={classNameOf}
                 onContext={(e, b) => setCtxMenu({ x: e.clientX, y: e.clientY, box: b })}
-                pushToast={pushToast} />
+                pushToast={pushToast}
+                hints={showHints && cur ? reviewList?.get(cur.name)?.flags : undefined}
+                hintNames={reviewClasses} fa={lang === "fa"} />
               <ToolRail tool={tool} setTool={setTool} zoom={zoom} setZoom={setZoom}
                 toggleInspector={() => setShowInspector(v => !v)} />
               <ChipBar classes={classes} boxes={boxes}

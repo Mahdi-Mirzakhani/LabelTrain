@@ -32,6 +32,7 @@ const api: ElectronAPI = {
   saveProject: (project: ProjectMeta) => ipcRenderer.invoke("project:save", project),
   loadProgress: (folder: string) => ipcRenderer.invoke("progress:load", folder),
   saveProgress: (folder: string, progress: ReviewProgress) => ipcRenderer.invoke("progress:save", folder, progress),
+  loadReview: (folder: string) => ipcRenderer.invoke("review:load", folder),
   listRecentProjects: () => ipcRenderer.invoke("project:listRecent"),
   clearRecentProjects: () => ipcRenderer.invoke("project:clearRecent"),
   removeRecentProject: (imageDir: string) => ipcRenderer.invoke("project:removeRecent", imageDir),

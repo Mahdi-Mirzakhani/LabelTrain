@@ -6,7 +6,9 @@ import { isDrawable, makeBox } from "../lib/boxes";
 import {
   angleFromPointer, clampIntoImage, normalizeAngle, resizeRotated, snapAngle, toDeg,
 } from "../lib/obb";
+import { flagText } from "../lib/review";
 import type { ImageItem, NBox } from "../types";
+import type { ReviewFlag } from "../electron-api";
 
 type SetBoxes = (updater: NBox[] | ((bs: NBox[]) => NBox[])) => void;
 
@@ -42,6 +44,11 @@ interface CanvasProps {
   classNameOf: (key: string) => string;
   onContext: (e: React.MouseEvent, b: NBox) => void;
   pushToast?: (t: ToastBody) => void;
+  /** An audit's flags for this image, drawn as dashed marks that never take a click. */
+  hints?: ReviewFlag[];
+  /** Class names the flags' class indices refer to. */
+  hintNames?: string[];
+  fa?: boolean;
 }
 
 interface DragState {
@@ -60,6 +67,7 @@ interface DragState {
 export function CanvasStage({
   image, boxes, setBoxes, selId, setSelId, tool, activeClass, activeClassName,
   obb = false, zoom, setZoom, classColor, classNameOf, onContext, pushToast,
+  hints, hintNames = [], fa = false,
 }: CanvasProps) {
   const stageRef = useRef<HTMLDivElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -378,6 +386,22 @@ export function CanvasStage({
               </div>
             );
           })}
+          {hints?.map((f, i) => (
+            <div key={`hint-${i}`} className={"hint hint-" + f.kind.replace(" ", "-")} style={{
+              left: f.box[0] * 100 + "%", top: f.box[1] * 100 + "%",
+              width: (f.box[2] - f.box[0]) * 100 + "%", height: (f.box[3] - f.box[1]) * 100 + "%",
+            }}>
+              <span className="hint-label">{flagText(f, hintNames, fa)}</span>
+              {f.inner && (
+                <div className="hint-inner" style={{
+                  left: (f.inner[0] - f.box[0]) / (f.box[2] - f.box[0]) * 100 + "%",
+                  top: (f.inner[1] - f.box[1]) / (f.box[3] - f.box[1]) * 100 + "%",
+                  width: (f.inner[2] - f.inner[0]) / (f.box[2] - f.box[0]) * 100 + "%",
+                  height: (f.inner[3] - f.inner[1]) / (f.box[3] - f.box[1]) * 100 + "%",
+                }} />
+              )}
+            </div>
+          ))}
           {rubber && (
             <div className="rubber" style={{
               left: rubber.x * 100 + "%", top: rubber.y * 100 + "%",
