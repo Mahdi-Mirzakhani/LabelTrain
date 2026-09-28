@@ -84,6 +84,8 @@ export interface DedupScanResult { items: DedupScanItem[]; pairs: DedupPair[]; m
 export interface DedupApplyItem { image: string; keeper: string; match?: string; cosine?: number; hamming?: number; }
 export interface DedupApplyResult { batch: string | null; folder: string | null; moved: string[]; errors: string[]; }
 export interface DedupUndoResult { batch: string; restored: string[]; skipped: string[]; }
+/** What earlier move-outs left: images still out of the dataset, in how many batches, and the images kept in their place. */
+export interface DedupHistory { moved: number; batches: number; keepers: string[]; }
 
 export interface SaveAnnotationsRequest {
   imagePath: string;
@@ -220,6 +222,7 @@ export interface ElectronAPI {
   cancelDedupScan: () => Promise<void>;
   onDedupProgress: (cb: (p: DedupProgress) => void) => () => void;
   dedupCacheInfo: (root: string) => Promise<DedupCacheInfo>;
+  dedupHistory: (root: string) => Promise<DedupHistory>;
   dedupApply: (req: { root: string; items: DedupApplyItem[]; outputDir: string }) => Promise<DedupApplyResult>;
   dedupUndo: (root: string) => Promise<DedupUndoResult | null>;
   dedupLastBatch: (root: string) => Promise<{ batch: string; count: number } | null>;

@@ -102,6 +102,10 @@ const FA: Record<string, string> = {
   "You can switch to another tab — the scan keeps running.": "می‌توانید به تب دیگری بروید — اسکن ادامه پیدا می‌کند.",
   "Change method": "تغییر روش", "Pick another way to look, and scan again": "روش دیگری انتخاب کنید و دوباره اسکن کنید",
   "Back to the results": "برگشت به نتیجه‌ها", "Choose another method": "روش دیگری انتخاب کنید",
+  "kept last time": "دفعهٔ قبل ماند", "This image stayed when its look-alikes were moved out before": "این عکس وقتی شبیه‌هایش قبلاً بیرون رفتند، ماند",
+  "images moved out earlier — none of them is in this scan": "عکسی که قبلاً بیرون بردید در این اسکن نیست",
+  "They wait in the folder beside the dataset. Look-alikes found now are other files — often other frames of the same video; the image kept last time is marked.":
+    "در پوشهٔ کنار دیتاست منتظرند. شبیه‌هایی که الان پیدا شده فایل‌های دیگری‌اند — اغلب فریم‌های دیگرِ همان ویدیو؛ عکسی که دفعهٔ قبل ماند علامت دارد.",
   "Review list": "فهرست بازبینی", "To review": "برای بازبینی", "All flagged": "همهٔ موارد مشکوک",
   "to review": "برای بازبینی", "flagged": "مشکوک", "Filter → To review": "فیلتر ← برای بازبینی",
   "Hints": "راهنما", "Show where the audit found a problem": "نشان دادن جای مشکل روی تصویر",

@@ -15,7 +15,7 @@ import path from "node:path";
 import { spawn, type ChildProcess } from "node:child_process";
 import { labelFilesOf } from "./annotation-io.ts";
 import type {
-  DedupApplyResult, DedupCacheInfo, DedupProgress, DedupScanRequest, DedupScanResult, DedupScope, DedupUndoResult,
+  DedupApplyResult, DedupCacheInfo, DedupHistory, DedupProgress, DedupScanRequest, DedupScanResult, DedupScope, DedupUndoResult,
 } from "./ipc-types.ts";
 
 const SPLITS = ["train", "valid", "val", "test"];
@@ -229,6 +229,39 @@ export async function lastDedupBatch(root: string): Promise<{ batch: string; cou
 }
 
 /** Put the newest "-labeltrain" batch back where it came from. */
+/**
+ * What earlier move-outs left, from every batch beside the dataset — the
+ * app's and the helmet project's dataset-dedup.py's, which write the same
+ * manifest; undone ones are skipped (their manifest was renamed). Counts only
+ * images that are still out, and lists the images kept in their place, so a
+ * rescan can say the moved ones are not in it and mark the survivors: frames
+ * of one video look like the images moved out before, but are other files.
+ */
+export async function dedupHistory(root: string): Promise<DedupHistory> {
+  const parent = `${root}.duplicates`;
+  let names: string[] = [];
+  try { names = await fs.readdir(parent); } catch { return { moved: 0, batches: 0, keepers: [] }; }
+  let moved = 0, batches = 0;
+  const keepers = new Set<string>();
+  for (const b of names) {
+    let txt: string;
+    try { txt = await fs.readFile(path.join(parent, b, "manifest.jsonl"), "utf-8"); } catch { continue; }
+    let counted = false;
+    for (const line of txt.split("\n")) {
+      if (!line.trim()) continue;
+      let e: { image?: string; keeper?: string };
+      try { e = JSON.parse(line); } catch { continue; }       // a torn last line
+      if (!e.image) continue;
+      try { await fs.access(e.image); continue; } catch { /* still out */ }
+      moved++;
+      counted = true;
+      if (e.keeper) keepers.add(e.keeper);
+    }
+    if (counted) batches++;
+  }
+  return { moved, batches, keepers: [...keepers] };
+}
+
 export async function undoDedup(root: string): Promise<DedupUndoResult | null> {
   const last = await lastDedupBatch(root);
   if (!last) return null;

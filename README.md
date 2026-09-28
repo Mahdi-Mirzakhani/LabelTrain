@@ -290,9 +290,18 @@ images and every label file of theirs move to `<root>.duplicates/<stamp>-labeltr
 beside the dataset — outside it, as Ultralytics reads `images/` recursively —
 logged in `manifest.jsonl`, and **Undo last removal** (`Ctrl+Z`) puts them back.
 **Not duplicates** (`I`) remembers a group in `.labeler_dedup.json` so it is not
-grouped again. `J`/`K` walk the groups. COCO projects: the images move, but
-their entries stay in `coco_dataset.json`. See `electron/dedup.ts`,
-`src/lib/dedup.ts` and `tests/phase12-dedup.ts`.
+grouped again. `J`/`K` walk the groups; after a group is moved out or marked,
+the next one is chosen. COCO projects: the images move, but their entries
+stay in `coco_dataset.json`.
+
+A later scan often finds more of the same video: other frames, other files,
+that look just like the ones moved out before. So the summary counts the
+images moved out earlier and still out ("none of them is in this scan",
+from every batch's `manifest.jsonl`, undone ones left out), and the image
+that stayed last time is marked **kept last time** and suggested to stay
+again, after the split rule. Each move-out gets its own batch, named to the
+millisecond. See `electron/dedup.ts` (`dedupHistory`), `src/lib/dedup.ts` and
+`tests/phase12-dedup.ts`.
 
 ## Review list
 

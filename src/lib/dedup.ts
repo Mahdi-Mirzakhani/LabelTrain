@@ -214,13 +214,15 @@ export function labelPairs(facts: LabelFacts[], maxTol = MAX_BOX_TOL): Pair[] {
   return out;
 }
 
-export interface KeepFacts { boxes: number; split: string; pixels: number; bytes: number; }
+export interface KeepFacts { boxes: number; split: string; pixels: number; bytes: number; keptBefore?: boolean; }
 
 /**
  * The member to keep, by these rules in order: it has boxes; it sits in the
  * earliest split of `splitOrder` (by default test, then valid, then train, so
  * the evaluation sets keep their size while the leak into train disappears);
- * it has more boxes; more pixels; the bigger file; the lower index.
+ * it was the one kept in an earlier move-out (so a later scan does not take
+ * away the survivor of an earlier one); it has more boxes; more pixels; the
+ * bigger file; the lower index.
  */
 export function suggestKeeper(members: number[], facts: (i: number) => KeepFacts,
   splitOrder: string[] = ["test", "valid", "val", "train"]): number {
@@ -228,6 +230,7 @@ export function suggestKeeper(members: number[], facts: (i: number) => KeepFacts
   return [...members].sort((a, b) => {
     const fa = facts(a), fb = facts(b);
     return Number(fb.boxes > 0) - Number(fa.boxes > 0) || rank(fa.split) - rank(fb.split)
+      || Number(!!fb.keptBefore) - Number(!!fa.keptBefore)
       || fb.boxes - fa.boxes || fb.pixels - fa.pixels || fb.bytes - fa.bytes || a - b;
   })[0];
 }

@@ -644,6 +644,7 @@ input[type=range].native::-webkit-slider-runnable-track{height:4px;border-radius
 .dup-labels .dup-model-name{display:inline-flex;align-items:center;gap:6px}
 .dup-kind-labels{background:color-mix(in srgb,var(--info) 20%,transparent);color:var(--info)}
 .dup-cls-diff{font-size:10px;font-weight:600;color:var(--warning)}
+.dup-kept{display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:600;padding:1px 6px;border-radius:var(--r-pill);background:color-mix(in srgb,var(--info) 18%,transparent);color:var(--info)}
 .dup-intro-go{display:flex;align-items:center;gap:var(--sp-lg);margin-top:var(--sp-md)}
 .dup-back{margin-inline-start:auto}
 .dup-back .t-caption{margin-inline-start:4px}

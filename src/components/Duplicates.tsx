@@ -15,7 +15,7 @@ import {
   MAX_BOX_TOL, MODELS, bytesText, clock, durationText, estimateSeconds, groupPairs, labelPairs, pairKey, pairKind, preset, suggestKeeper,
   type DupGroup, type DupMethod, type GroupPair, type MatchKind, type Pair, type PresetName, type Sensitivity,
 } from "../lib/dedup";
-import type { BBox, DedupCacheInfo, DedupModel, DedupProgress, DedupScanResult, DedupScope } from "../electron-api";
+import type { BBox, DedupCacheInfo, DedupHistory, DedupModel, DedupProgress, DedupScanResult, DedupScope } from "../electron-api";
 import type { AnnotationFormat, ClassDef, ProjectInfo } from "../types";
 
 type Preset = PresetName | "custom";
@@ -56,6 +56,8 @@ const ROW_H = 78;
 const MODEL_ORDER: DedupModel[] = ["none", "resnet50", "dinov2"];
 
 function norm(p: string) { return p.replaceAll("\\", "/"); }
+/** A path as a set key: forward slashes, any case (Windows). */
+function pathKey(p: string) { return norm(p).toLowerCase(); }
 function rel(root: string, p: string) {
   const r = norm(root).replace(/\/+$/, "") + "/";
   const q = norm(p);
@@ -91,6 +93,7 @@ export function DuplicatesRoute({
   const [flicker, setFlicker] = useState(false);
   const [flickPhase, setFlickPhase] = useState(0);
   const [lastBatch, setLastBatch] = useState<{ batch: string; count: number } | null>(null);
+  const [history, setHistory] = useState<DedupHistory | null>(null);
   const [busy, setBusy] = useState(false);
   const [scrollTop, setScrollTop] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
@@ -116,6 +119,7 @@ export function DuplicatesRoute({
       if (live) setIgnored(new Set(pairs.map(([a, b]) => pairKey(a, b))));
     });
     void window.api!.dedupLastBatch(root).then(b => { if (live) setLastBatch(b); });
+    void window.api!.dedupHistory?.(root).then(h => { if (live) setHistory(h); });
     void window.api!.dedupCacheInfo(root).then(c => { if (live) setCacheInfo(c); });
     setCounted(null);
     void Promise.all(dirs.map(d => window.api!.listImagePaths(d))).then(l => { if (live) setCounted(l.flat().length); });
@@ -284,15 +288,17 @@ export function DuplicatesRoute({
     return () => { live = false; };
   }, [allGroups, scan, project, classes, format, outputDir, items, facts]);
 
+  /** Images that stayed in an earlier move-out: marked on their card, and kept again when they can be. */
+  const keptBefore = useMemo(() => new Set((history?.keepers ?? []).map(pathKey)), [history]);
   const keepOf = useCallback((g: DupGroup): Set<number> => {
     const chosen = keepers.get(g.id);
     if (chosen && chosen.size) return chosen;
     const order = keepTrain ? ["train", "valid", "val", "test"] : ["test", "valid", "val", "train"];
     return new Set([suggestKeeper(g.members, i => ({
       boxes: facts.get(items[i].path)?.boxes.length ?? 0, split: splitOf(items[i].path),
-      pixels: items[i].width * items[i].height, bytes: items[i].bytes,
+      pixels: items[i].width * items[i].height, bytes: items[i].bytes, keptBefore: keptBefore.has(pathKey(items[i].path)),
     }), order)]);
-  }, [keepers, keepTrain, facts, items, splitOf]);
+  }, [keepers, keepTrain, facts, items, splitOf, keptBefore]);
 
   const toRemove = useMemo(() => groups.flatMap(g => g.members.filter(i => !keepOf(g).has(i))), [groups, keepOf]);
   const freed = toRemove.reduce((s, i) => s + items[i].bytes, 0);
@@ -342,6 +348,7 @@ export function DuplicatesRoute({
   }, [scan, ignored, items, pushToast]);
 
   const refreshUndo = useCallback(async () => {
+    if (root) void window.api!.dedupHistory?.(root).then(setHistory);
     if (root) setLastBatch(await window.api!.dedupLastBatch(root));
   }, [root]);
 
@@ -549,7 +556,12 @@ export function DuplicatesRoute({
           <>
             <div className="dup-summary">
               <span><Icon name="checkCircle" size={14} /> {t("Scanned")} <b className="tnum">{items.length.toLocaleString()}</b> {t("images with")} <b>{scan.label}</b> {t("in")} {clock(scan.seconds)}
-                {hiddenPairs > 0 && <span className="tsec"> · <b className="tnum">{hiddenPairs.toLocaleString()}</b> {t("pairs you marked “Not duplicates” are hidden")}</span>}</span>
+                {hiddenPairs > 0 && <span className="tsec"> · <b className="tnum">{hiddenPairs.toLocaleString()}</b> {t("pairs you marked “Not duplicates” are hidden")}</span>}
+                {history && history.moved > 0 && (
+                  <span className="tsec" title={t("They wait in the folder beside the dataset. Look-alikes found now are other files — often other frames of the same video; the image kept last time is marked.")}>
+                    {" · "}<b className="tnum">{history.moved.toLocaleString()}</b> {t("images moved out earlier — none of them is in this scan")}
+                  </span>
+                )}</span>
               {(stronger.length > 0 || canAlign) && (
                 <span className="dup-stronger">
                   {t("Missing some?")}
@@ -713,7 +725,7 @@ export function DuplicatesRoute({
                       const show = flickPhase % 2 === 0 ? keep : other;
                       return (
                         <div className="dup-flicker">
-                          <DupCard i={show} big items={items} splitOf={splitOf} facts={facts} showLabels={showLabels}
+                          <DupCard i={show} big items={items} splitOf={splitOf} facts={facts} showLabels={showLabels} keptBefore={keptBefore}
                             classColor={classColor} keep={keepOf(sel).has(show)} index={sel.members.indexOf(show)}
                             pair={sel.pairs.find(p => (p.a === show && p.b === keep) || (p.b === show && p.a === keep))}
                             onToggle={() => toggleKeep(sel, show)} fa={fa} />
@@ -724,7 +736,7 @@ export function DuplicatesRoute({
                         {sel.members.map((m, k) => {
                           const keep = [...keepOf(sel)][0];
                           return (
-                            <DupCard key={m} i={m} items={items} splitOf={splitOf} facts={facts} showLabels={showLabels}
+                            <DupCard key={m} i={m} items={items} splitOf={splitOf} facts={facts} showLabels={showLabels} keptBefore={keptBefore}
                               classColor={classColor} keep={keepOf(sel).has(m)} index={k}
                               pair={m === keep ? undefined : sel.pairs.find(p => (p.a === m && p.b === keep) || (p.b === m && p.a === keep)) ?? sel.pairs.find(p => p.a === m || p.b === m)}
                               onToggle={() => toggleKeep(sel, m)} fa={fa} />
@@ -830,8 +842,8 @@ function ScanProgress({ run, now, fa, modelName, scopeText }: {
   );
 }
 
-function DupCard({ i, items, splitOf, facts, showLabels, classColor, keep, index, pair, onToggle, big, fa }: {
-  i: number; items: DedupScanResult["items"]; splitOf: (p: string) => string; facts: Map<string, Facts>;
+function DupCard({ i, items, splitOf, facts, showLabels, keptBefore, classColor, keep, index, pair, onToggle, big, fa }: {
+  i: number; items: DedupScanResult["items"]; splitOf: (p: string) => string; facts: Map<string, Facts>; keptBefore: Set<string>;
   showLabels: boolean; classColor: (k: string) => string; keep: boolean; index: number;
   pair?: GroupPair; onToggle: () => void; big?: boolean; fa: boolean;
 }) {
@@ -859,6 +871,11 @@ function DupCard({ i, items, splitOf, facts, showLabels, classColor, keep, index
           <span className="t-caption tnum">{it.width}×{it.height}</span>
           <span className="t-caption tnum">{bytesText(it.bytes)}</span>
           <span className="t-caption tnum">{boxes ? `${boxes.length} ${t("boxes")}` : "…"}</span>
+          {keptBefore.has(pathKey(it.path)) && (
+            <span className="dup-kept" title={t("This image stayed when its look-alikes were moved out before")}>
+              <Icon name="bookmark" size={11} />{t("kept last time")}
+            </span>
+          )}
         </div>
         {pair && (
           <div className="t-caption tsec tnum">

@@ -14,7 +14,7 @@ import {
   type LabelFacts,
 } from "../src/lib/dedup.ts";
 import {
-  applyDedup, dedupCacheInfo, dedupScope, lastDedupBatch, loadNotDuplicates, runDedupScan, saveNotDuplicates, undoDedup,
+  applyDedup, dedupCacheInfo, dedupHistory, dedupScope, lastDedupBatch, loadNotDuplicates, runDedupScan, saveNotDuplicates, undoDedup,
 } from "../electron/dedup.ts";
 import type { DedupPair } from "../electron/ipc-types.ts";
 
@@ -155,6 +155,10 @@ phase("suggestKeeper");
   eq(suggestKeeper([1, 2], f), 2, "among labelled copies the test one stays (the train copy is the leak)");
   eq(suggestKeeper([1, 2], f, ["train", "valid", "test"]), 1, "the split order can be turned round");
   eq(suggestKeeper([2, 3], f), 3, "then more pixels");
+  const kept = (i: number) => ({ ...facts[i], keptBefore: i === 2 });
+  eq(suggestKeeper([2, 3], kept), 2, "the image kept in an earlier move-out stays again, before more pixels");
+  eq(suggestKeeper([1, 2], (i: number) => ({ ...facts[i], keptBefore: i === 1 })), 2,
+    "... but not over the split rule: a train survivor still gives way to its test copy");
   eq(bytesText(3_355_443), "3.2 MB", "sizes read like sizes");
 }
 
@@ -224,6 +228,26 @@ try {
     check(r1.batch !== r2.batch && r1.batch! < r2.batch!, "two batches, in order", [r1.batch, r2.batch]);
     eq((await undoDedup(ds))?.restored, [b], "undo brings back the second first");
     eq((await undoDedup(ds))?.restored, [a], "then the first — its record was not overwritten");
+  }
+
+  phase("dedupHistory: images still out, in how many batches, and the ones kept in their place");
+  {
+    const ds = path.join(root, "ds3");
+    const img = (split: string, n: string) => path.join(ds, split, "images", n);
+    const [a, b, c, k, k2] = [img("train", "a.jpg"), img("train", "b.jpg"), img("valid", "c.jpg"), img("test", "k.jpg"), img("test", "k2.jpg")];
+    for (const p of [a, b, c, k, k2]) await put(p, "x");
+    eq(await dedupHistory(ds), { moved: 0, batches: 0, keepers: [] }, "nothing moved yet");
+    await applyDedup(ds, [{ image: a, keeper: k }, { image: b, keeper: k }], "");
+    eq(await dedupHistory(ds), { moved: 2, batches: 1, keepers: [k] }, "two moved in one batch, k stayed");
+    await applyDedup(ds, [{ image: c, keeper: k2 }], "");
+    await undoDedup(ds);
+    eq(await dedupHistory(ds), { moved: 2, batches: 1, keepers: [k] }, "an undone batch does not count");
+    const other = img("train", "x.jpg"), y = img("test", "y.jpg");
+    await put(path.join(`${ds}.duplicates`, "20260101-000000", "manifest.jsonl"), JSON.stringify({ image: other, stored: "s", keeper: y }) + "\n{torn");
+    const h = await dedupHistory(ds);
+    eq([h.moved, h.batches, h.keepers.sort()], [3, 2, [k, y].sort()], "dataset-dedup.py's batches count too; a torn line is skipped");
+    await put(a, "back by hand");
+    eq((await dedupHistory(ds)).moved, 2, "an image put back by hand is no longer counted as out");
   }
 
   phase("not-duplicates list round-trips");
