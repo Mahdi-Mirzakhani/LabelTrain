@@ -213,7 +213,7 @@ the whole dataset (train, valid, test) — and finds four kinds of repeat in the
 | --- | --- | --- |
 | Exact copy | the same file twice | BLAKE2 of the file |
 | Copy | resized, re-saved, mirrored or letterboxed | 64-bit DCT perceptual hash, mirrored too, after cropping flat borders |
-| Same photo | a heavy crop, shift or small turn of one photo | ORB features + RANSAC homography, then the overlap's correlation (NCC ≥ 0.9) |
+| Same photo | a heavy crop, shift, turn or mirror of one photo, stretched, padded, recoloured, drawn on, or a tile of a mosaic | ORB features of the image and its mirror + a MAGSAC homography, then the overlap compared cell by cell (below) |
 | Look-alike | cropped, zoomed, recoloured, the next frame of a video | cosine of ResNet50 or DINOv2 features (needs torch) |
 
 Before a scan you choose how hard to look; each step finds what the one
@@ -226,8 +226,51 @@ picked; **Back to the results** (`Esc`) returns without losing them.
 | Fast | hashes only | exact copies and copies; no torch needed |
 | Standard | ResNet50 (torchvision) | + look-alikes |
 | Strong | DINOv2 ViT-B/14 (timm, ~350 MB download the first time) | + tells a changed copy from a different photo best |
-| + Pixel alignment | on top of either model | + same photo, checked pixel by pixel against each image's 3 nearest neighbours |
+| Thorough | DINOv2 + Meta's SSCD copy detector (ResNeXt101, MIT, ~180 MB download the first time); for a computer with an NVIDIA GPU | + same photo, however it was changed: each image lined up with its 10 nearest by SSCD — and the 3 nearest of each of its 90/180/270° turns — always |
+| + Pixel alignment | on top of Standard or Strong | + same photo, checked pixel by pixel against each image's 3 nearest neighbours |
 | Same labels | the label files | same size, same number of boxes, same corners (below) |
+
+Pixel alignment is off with Fast and Same labels — the card says so: a model's
+features choose which images to line up.
+
+### Thorough, and how "same photo" is decided
+
+To find every copy, a scan has to put each copy next to its original and then
+decide. Thorough hands the choosing to SSCD, a descriptor Meta trained for
+image copy detection, run on each image as it is and turned 90, 180 and 270°;
+every pair it proposes (similarity ≥ 0.15, low enough for a photo that became
+one tile of a mosaic) is lined up. The deciding is the same for every choice:
+
+1. ORB keypoints of one image are matched to those of the other and of its
+   mirror image; a MAGSAC homography lines them up.
+2. The overlap is compared in the frame where the shared content is smaller —
+   a crop is not judged against its own blurry enlargement — in 32 px cells,
+   each normalised for brightness and contrast, with 2 px of slack.
+3. It is the same photo when 85% of the cells agree, the median cell
+   correlation is ≥ 0.965, and the cells that disagree do not form a blob over
+   8% of them. A copy agrees nearly everywhere; another frame of the same video
+   leaves a blob where the person moved. Cells flat in one picture only (a
+   pasted box, a watermark) are left out, and so are disagreeing cells on the
+   edge of the overlap, twice over — where a crop or a mosaic tile ends.
+
+Measured on 400 edited copies of helmet-merged-v4 images — 18 kinds of edit:
+light and heavy crops, 90/180° and small turns, mirror, mirror + crop, stretch,
+letterbox, reflect padding, shift, perspective, colour, grey, blur + noise,
+pasted boxes, re-saved small, and mosaics — among 3,650 other images of it:
+
+| | copies found |
+| --- | --- |
+| Fast (hashes) | 166 |
+| Standard / Strong + the earlier alignment (correlation of the whole overlap, no mirror) | 294 / 287 by alignment |
+| Strong + this alignment | 355 by alignment |
+| Thorough | 395 by alignment; all but 4 mosaics and 1 blurred copy |
+
+The only other pairs Thorough called the same photo were copies too: mosaics
+holding the image, a padded copy, a mirrored grey one, a collage. It took 17
+minutes for those 4,058 images on a GTX 1660 Ti with a 6-core i5; a first
+Thorough scan of 12,500 images takes about an hour, a rescan under a minute.
+Frames of one video are not the same photo: with Thorough they are
+look-alikes, as with Strong.
 
 ### Same labels
 
@@ -255,15 +298,16 @@ The summary line counts the matching pairs hidden because you marked them
 
 Standard needs the Auto-label Python with `torch` and `torchvision` (Ultralytics
 brings both), Strong also `pip install timm`, and pixel alignment OpenCV
-(also brought by Ultralytics). A model that cannot load says why, and the
-scan falls back to hashes.
+(also brought by Ultralytics). Thorough needs what Strong needs; SSCD is a
+TorchScript file fetched into torch's hub cache the first time. A model that
+cannot load says why, and the scan falls back to hashes — Thorough without
+SSCD (no network) goes on as Strong with alignment and says so.
 
 The screen estimates how long a scan will take before you start it; the first
 ResNet50 scan of 15,000 images took about five minutes on a GTX 1660 Ti.
 Measured on 31 duplicates found by hand in a helmet dataset among 1,500 of its
 images: at the same count of wrong pairs, DINOv2 found 12 of the 14 true copies
-where ResNet50 found 8, and alignment confirmed all 14 with at most one wrong
-pair. ResNet152 did worse than ResNet50 and is not offered.
+where ResNet50 found 8. ResNet152 did worse than ResNet50 and is not offered.
 
 While it runs, the scan is a list of steps — list the images, load the model
 (GPU or CPU), read and describe every image, compare, line up — each with its
