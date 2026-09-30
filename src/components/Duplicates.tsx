@@ -12,7 +12,8 @@ import { Checkbox, CountUp, Segmented, Slider } from "./ui";
 import { t } from "../i18n";
 import { inElectron, pathToAppUrl } from "../ipc";
 import {
-  MAX_BOX_TOL, MODELS, bytesText, clock, durationText, estimateSeconds, groupPairs, labelPairs, pairKey, pairKind, preset, suggestKeeper,
+  MAX_BOX_TOL, MODELS, alignSeconds, bytesText, cachedFor, clock, durationText, estimateSeconds, groupPairs, labelPairs, pairKey, pairKind,
+  preset, suggestKeeper,
   type DupGroup, type DupMethod, type GroupPair, type MatchKind, type Pair, type PresetName, type Sensitivity,
 } from "../lib/dedup";
 import type { BBox, DedupCacheInfo, DedupHistory, DedupModel, DedupProgress, DedupScanResult, DedupScope } from "../electron-api";
@@ -45,7 +46,7 @@ interface Run {
   align: boolean;
   images: number;
   guess: number | null;   // seconds the whole scan should take, for "left" before the first rate is known
-  steps: Record<string, { done: number; total: number; t0: number; t1?: number }>;
+  steps: Record<string, { done: number; total: number; t0: number; t1?: number; d0?: number }>;   // d0: done when first seen (cached)
   info: Record<string, string>;
 }
 /** A scan's result: the scanner's, or the label comparison's, whose pairs carry two more numbers. */
@@ -53,7 +54,7 @@ type ScanData = Omit<DedupScanResult, "pairs"> & { pairs: Pair[] };
 interface Scan { root: string; method: DupMethod; result: ScanData; seconds: number; label: string }
 
 const ROW_H = 78;
-const MODEL_ORDER: DedupModel[] = ["none", "resnet50", "dinov2"];
+const MODEL_ORDER: DedupModel[] = ["none", "resnet50", "dinov2", "thorough"];
 
 function norm(p: string) { return p.replaceAll("\\", "/"); }
 /** A path as a set key: forward slashes, any case (Windows). */
@@ -100,7 +101,9 @@ export function DuplicatesRoute({
   const cancelLabels = useRef(false);
   const lastIdx = useRef(0);          // index of the chosen group, see below
 
-  const modelName = (m: DupMethod) => ({ none: t("Hashes only"), resnet50: "ResNet50", dinov2: "DINOv2", labels: t("Same labels") } as const)[m];
+  const modelName = (m: DupMethod) => ({
+    none: t("Hashes only"), resnet50: "ResNet50", dinov2: "DINOv2", thorough: "DINOv2 + SSCD", labels: t("Same labels"),
+  } as const)[m];
 
   // ---- scope, not-duplicates list, undo state and what is cached
   useEffect(() => {
@@ -133,9 +136,11 @@ export function DuplicatesRoute({
       if (p.phase === "info" && p.key) return { ...r, info: { ...r.info, [p.key]: p.value ?? "" } };
       const prev = r.steps[p.phase];
       const t = Date.now();
-      const step = { done: p.done, total: p.total, t0: prev?.t0 ?? t, t1: p.total > 0 && p.done >= p.total ? t : undefined };
-      // a new phase closes the ones before it (a fully cached read reports 0 of 0 and never fills up)
-      const steps = prev ? { ...r.steps } : Object.fromEntries(Object.entries(r.steps).map(([k, s]) => [k, s.t1 ? s : { ...s, t1: t }]));
+      const step = { done: p.done, total: p.total, t0: prev?.t0 ?? t, d0: prev?.d0 ?? p.done, t1: p.total > 0 && p.done >= p.total ? t : undefined };
+      // a new phase closes the ones before it (a fully cached read reports 0 of 0 and never fills up);
+      // a download happens inside "load" and closes nothing
+      const steps = prev || p.phase === "download" ? { ...r.steps }
+        : Object.fromEntries(Object.entries(r.steps).map(([k, s]) => [k, s.t1 ? s : { ...s, t1: t }]));
       return { ...r, steps: { ...steps, [p.phase]: step } };
     });
   }) : undefined, []);
@@ -185,16 +190,15 @@ export function DuplicatesRoute({
   const runScan = useCallback(async (withModel = model, withAlign = align) => {
     if (!scope || !root || run) return;
     const byLabels = withModel === "labels";
-    const alignOn = withAlign && withModel !== "none" && !byLabels;
+    const alignOn = withModel === "thorough" || (withAlign && withModel !== "none" && !byLabels);
     setModel(withModel);
-    setAlign(alignOn);
+    if (withModel !== "thorough") setAlign(alignOn);    // Thorough aligns anyway; keep the choice for the others
     setScanError(null);
     cancelLabels.current = false;
     setPicking(false);
     const started = Date.now();
-    const guess = counted !== null ? estimateSeconds(counted, withModel, alignOn, {
-      hashes: !!cacheInfo?.hashes, model: !!cacheInfo?.models.includes(withModel), align: !!cacheInfo?.align.includes(withModel),
-    }) : null;
+    const guess = counted !== null ? estimateSeconds(counted, withModel, alignOn,
+      cachedFor(withModel === "labels" ? "none" : withModel, cacheInfo)) : null;
     setRun({ started, model: withModel, align: alignOn, images: counted ?? 0, guess, steps: { list: { done: 0, total: 1, t0: started } }, info: {} });
     try {
       const lists = await Promise.all(dirs.map(d => window.api!.listImagePaths(d)));
@@ -225,6 +229,9 @@ export function DuplicatesRoute({
       if (!byLabels) void window.api!.dedupCacheInfo(root).then(setCacheInfo);
       if (!byLabels && withModel !== "none" && !result.deep) {
         pushToast({ icon: "alert", sticky: true, msg: `${modelName(withModel)} ${t("could not run")}: ${result.deepError ?? ""}` });
+      } else if (!byLabels && result.deepError) {
+        // part of it ran: Thorough without SSCD (no network) is a DINOv2 scan, alignment without OpenCV is none
+        pushToast({ icon: "alert", sticky: true, msg: `${t("Part of the scan could not run")}: ${result.deepError.trim()}` });
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -443,36 +450,46 @@ export function DuplicatesRoute({
     { value: "loose", label: t("Loose") },
     { value: "custom", label: t("Custom") },
   ];
-  const estimate = counted !== null ? estimateSeconds(counted, model, align, {
-    hashes: !!cacheInfo?.hashes, model: !!cacheInfo?.models.includes(model), align: !!cacheInfo?.align.includes(model),
-  }) : null;
+  const estimate = counted !== null
+    ? estimateSeconds(counted, model, align, cachedFor(model === "labels" ? "none" : model, cacheInfo)) : null;
   const stronger = byLabels ? [] : MODEL_ORDER.slice(MODEL_ORDER.indexOf(scanModel) + 1);
   const canAlign = !!scan && !byLabels && !scan.result.align && scanModel !== "none";
   const start = Math.max(0, Math.floor(scrollTop / ROW_H) - 8);
   const visible = groups.slice(start, start + 40);
   const noAlign = model === "none" || model === "labels";
+  const alignBuiltIn = model === "thorough";
+  const alignOn = alignBuiltIn || (align && !noAlign);
 
   const picker = (<>
     <div className="dup-models">
       {MODEL_ORDER.map(m => (
         <button key={m} className={"dup-model" + (model === m ? " on" : "")} onClick={() => setModel(m)} disabled={!!run}>
           <div className="dup-model-head">
-            <span className="dup-model-name">{m === "none" ? t("Fast") : m === "resnet50" ? t("Standard") : t("Strong")}</span>
+            <span className="dup-model-name">{
+              m === "none" ? t("Fast") : m === "resnet50" ? t("Standard") : m === "dinov2" ? t("Strong") : t("Thorough")}</span>
             <span className="t-caption tsec">{modelName(m)}</span>
           </div>
           <span className="t-caption tsec">{m === "none"
             ? t("Only exact and resized / mirrored copies. No torch needed.")
             : m === "resnet50" ? t("Adds look-alikes: cropped, recoloured, video frames.")
-              : t("Tells a changed copy from a different photo best. Downloads ~350 MB the first time.")}</span>
-          {cacheInfo?.models.includes(m) && <span className="dup-cached">{t("scanned before — quick")}</span>}
+              : m === "dinov2" ? t("Tells a changed copy from a different photo best. Downloads ~350 MB the first time.")
+                : t("Leaves nothing out: Meta's copy detector (SSCD) picks each image's closest, turned too, and every pair is lined up pixel by pixel, mirrored too. For a computer with an NVIDIA GPU; the slowest. ~180 MB more to download the first time.")}</span>
+          {cachedFor(m, cacheInfo).model && m !== "none" && <span className="dup-cached">{t("scanned before — quick")}</span>}
         </button>
       ))}
-      <label className={"dup-model dup-align" + (align && !noAlign ? " on" : "") + (noAlign ? " off" : "")}>
+      <label className={"dup-model dup-align" + (alignOn ? " on" : "") + (noAlign ? " off" : "") + (alignBuiltIn ? " fixed" : "")}>
         <div className="dup-model-head">
-          <Checkbox on={align && !noAlign} onChange={v => setAlign(v)} />
+          <Checkbox on={alignOn} onChange={v => setAlign(v)} />
           <span className="dup-model-name">{t("+ Pixel alignment")}</span>
         </div>
-        <span className="t-caption tsec">{t("Strongest: lines each image up with its nearest neighbours pixel by pixel — finds heavy crops, shifts and turns. Slower the first time.")}</span>
+        <span className="t-caption tsec">{t("Lines each image up with its nearest neighbours pixel by pixel — finds heavy crops, shifts, turns and mirrored copies. Slower the first time.")}</span>
+        {(noAlign || alignBuiltIn) && (
+          <span className="t-caption dup-hint">
+            <Icon name="info" size={12} />
+            {noAlign ? t("Choose Standard, Strong or Thorough first: the model picks which images to line up.")
+              : t("Always on in Thorough.")}
+          </span>
+        )}
       </label>
     </div>
     <div className="t-caption tsec dup-section-title">{t("Or compare the labels")}</div>
@@ -766,6 +783,7 @@ function ScanProgress({ run, now, fa, modelName, scopeText }: {
   const cached = +(run.info.cached ?? NaN);
   const todo = +(run.info.todo ?? NaN);
   const device = run.info.device === "cuda" ? "GPU" : run.info.device === "cpu" ? "CPU" : "";
+  const dl = run.steps.download;          // a model's weights, in MB
   type Step = { id: string; title: string; detail?: string };
   const listStep: Step = { id: "list", title: t("List the images"), detail: run.images ? `${run.images.toLocaleString()} ${t("images")} · ${scopeText}` : scopeText };
   const steps: Step[] = run.model === "labels" ? [
@@ -776,22 +794,34 @@ function ScanProgress({ run, now, fa, modelName, scopeText }: {
     listStep,
     ...(run.model !== "none" ? [{
       id: "load", title: `${t("Load")} ${modelName(run.model)}`,
-      detail: [device, run.model === "dinov2" ? t("the first time it downloads ~350 MB") : ""].filter(Boolean).join(" · "),
+      detail: [
+        device,
+        dl && !dl.t1 ? `${t("downloading")} ${dl.done} / ${dl.total} MB`
+          : run.model === "dinov2" ? t("the first time it downloads ~350 MB")
+            : run.model === "thorough" ? t("the first time it downloads up to ~530 MB") : "",
+      ].filter(Boolean).join(" · "),
     }] : []),
     { id: "read", title: run.model === "none" ? t("Read and hash every image") : t("Read, hash and describe every image"),
       detail: Number.isFinite(cached) ? `${cached.toLocaleString()} ${t("cached from an earlier scan")} · ${todo.toLocaleString()} ${t("to read")}` : undefined },
     { id: "compare", title: t("Compare every image with every other") },
-    ...(run.align ? [{ id: "align", title: t("Line up each image with its nearest neighbours, pixel by pixel"),
-      detail: run.info.align_pairs ? `${(+run.info.align_pairs).toLocaleString()} ${t("pairs")}` : undefined }] : []),
+    ...(run.align ? [{
+      id: "align",
+      title: run.model === "thorough" ? t("Line up each image with its closest by SSCD, pixel by pixel, mirrored too")
+        : t("Line up each image with its nearest neighbours, pixel by pixel"),
+      detail: run.info.align_pairs ? `${(+run.info.align_pairs).toLocaleString()} ${t("pairs")}` +
+        (+(run.info.align_cached ?? 0) > 0 ? ` · ${(+run.info.align_cached).toLocaleString()} ${t("cached from an earlier scan")}` : "") : undefined,
+    }] : []),
   ];
   const order = steps.map(s => s.id);
   const current = [...order].reverse().find(id => run.steps[id]) ?? "list";
   const left = (() => {
     const st = run.steps[current];
-    if (!st || !st.total || st.done <= 0) return run.guess !== null ? Math.max(1, run.guess - elapsed) : null;
-    const rate = st.done / Math.max(0.5, (now - st.t0) / 1000);
+    if (!st || !st.total || st.done <= (st.d0 ?? 0)) return run.guess !== null ? Math.max(1, run.guess - elapsed) : null;
+    const rate = (st.done - (st.d0 ?? 0)) / Math.max(0.5, (now - st.t0) / 1000);
     let sec = (st.total - st.done) / rate;
-    if (current === "read" && run.align) sec += (run.images * 2.2) / 60;   // alignment still to come
+    if (current === "read" && run.align && run.model !== "labels") {
+      sec += alignSeconds(run.images, run.model, false);      // alignment still to come
+    }
     return sec;
   })();
   return (
@@ -810,7 +840,7 @@ function ScanProgress({ run, now, fa, modelName, scopeText }: {
           const st = run.steps[s.id];
           const state = st?.t1 ? "done" : st ? "now" : "wait";
           const pct = st?.total ? Math.min(100, (st.done / st.total) * 100) : 0;
-          const rate = st && st.total > 1 && st.done > 0 ? st.done / Math.max(0.5, ((st.t1 ?? now) - st.t0) / 1000) : null;
+          const rate = st && st.total > 1 && st.done > (st.d0 ?? 0) ? (st.done - (st.d0 ?? 0)) / Math.max(0.5, ((st.t1 ?? now) - st.t0) / 1000) : null;
           return (
             <li key={s.id} className={"dup-step " + state}>
               <span className="dup-step-mark">{state === "done" ? <Icon name="check" size={12} /> : state === "now" ? <span className="dup-dot" /> : null}</span>

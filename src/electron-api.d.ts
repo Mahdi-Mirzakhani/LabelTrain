@@ -90,7 +90,7 @@ export interface ReviewList { created: string; classes: string[]; items: ReviewI
 // ---- Duplicates tab (mirrors electron/ipc-types.ts) ----
 export interface DedupScope { root: string; folder: string; splits: { name: string; dir: string }[]; }
 /** The features model: none (hashes only), ResNet50, or DINOv2 ViT-B/14. */
-export type DedupModel = "none" | "resnet50" | "dinov2";
+export type DedupModel = "none" | "resnet50" | "dinov2" | "thorough";
 export interface DedupScanRequest { images: string[]; root: string; model: DedupModel; align: boolean; maxHam?: number; minCos?: number; }
 /** A step of the scan (load | read | compare | align), or with phase "info" a key/value about it. */
 export interface DedupProgress { phase: string; done: number; total: number; key?: string; value?: string; }

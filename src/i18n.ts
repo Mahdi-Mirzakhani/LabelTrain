@@ -68,8 +68,18 @@ const FA: Record<string, string> = {
   "Adds look-alikes: cropped, recoloured, video frames.": "عکس‌های شبیه را هم پیدا می‌کند: بریده، تغییر رنگ، فریم‌های ویدیو.",
   "Tells a changed copy from a different photo best. Downloads ~350 MB the first time.": "کپی تغییرکرده را از عکس متفاوت بهتر از همه تشخیص می‌دهد. بار اول حدود ۳۵۰ مگ دانلود می‌کند.",
   "scanned before — quick": "قبلاً اسکن شده — سریع", "+ Pixel alignment": "+ هم‌ترازی پیکسلی", "pixel alignment": "هم‌ترازی پیکسلی",
-  "Strongest: lines each image up with its nearest neighbours pixel by pixel — finds heavy crops, shifts and turns. Slower the first time.":
-    "قوی‌ترین: هر عکس را پیکسل‌به‌پیکسل با نزدیک‌ترین همسایه‌هایش هم‌تراز می‌کند — برش، جابه‌جایی و چرخش شدید را پیدا می‌کند. بار اول کندتر است.",
+  "Lines each image up with its nearest neighbours pixel by pixel — finds heavy crops, shifts, turns and mirrored copies. Slower the first time.":
+    "هر عکس را پیکسل‌به‌پیکسل با نزدیک‌ترین همسایه‌هایش هم‌تراز می‌کند — برش، جابه‌جایی و چرخش شدید و کپی آینه‌ای را پیدا می‌کند. بار اول کندتر است.",
+  "Choose Standard, Strong or Thorough first: the model picks which images to line up.":
+    "اول «استاندارد»، «قوی» یا «کامل» را انتخاب کنید: مدل تعیین می‌کند کدام عکس‌ها با هم هم‌تراز شوند.",
+  "Always on in Thorough.": "در حالت «کامل» همیشه روشن است.",
+  "Thorough": "کامل",
+  "Leaves nothing out: Meta's copy detector (SSCD) picks each image's closest, turned too, and every pair is lined up pixel by pixel, mirrored too. For a computer with an NVIDIA GPU; the slowest. ~180 MB more to download the first time.":
+    "چیزی جا نمی‌ماند: مدل کپی‌یاب Meta (SSCD) نزدیک‌ترین عکس‌ها به هر عکس را — چرخیده هم — پیدا می‌کند و هر جفت پیکسل‌به‌پیکسل، آینه‌ای هم، هم‌تراز می‌شود. برای کامپیوتر با کارت گرافیک NVIDIA؛ کندترین. بار اول حدود ۱۸۰ مگ بیشتر دانلود می‌کند.",
+  "Part of the scan could not run": "بخشی از اسکن اجرا نشد",
+  "downloading": "در حال دانلود", "the first time it downloads up to ~530 MB": "بار اول تا حدود ۵۳۰ مگ دانلود می‌کند",
+  "Line up each image with its closest by SSCD, pixel by pixel, mirrored too":
+    "هم‌تراز کردن پیکسل‌به‌پیکسل هر عکس با نزدیک‌ترین‌هایش از نظر SSCD، آینه‌ای هم",
   "Scanned": "اسکن شد:", "images with": "عکس با", "in": "در", "Missing some?": "چیزی جا مانده؟", "Try": "امتحان",
   "could not run": "اجرا نشد", "Same photo": "همان عکس", "Same photo (aligned)": "همان عکس (هم‌تراز)",
   "A stronger model may find what this one missed:": "شاید مدل قوی‌تر آنچه این مدل ندید را پیدا کند:", "Scan with": "اسکن با",

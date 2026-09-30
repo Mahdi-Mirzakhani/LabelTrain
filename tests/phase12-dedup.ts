@@ -10,7 +10,7 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { phase, check, eq, report } from "./_assert.ts";
 import {
-  PRESETS, clock, durationText, estimateSeconds, groupPairs, labelPairs, matchBoxes, pairKind, preset, suggestKeeper, bytesText,
+  PRESETS, cachedFor, clock, durationText, estimateSeconds, groupPairs, labelPairs, matchBoxes, pairKind, preset, suggestKeeper, bytesText,
   type LabelFacts,
 } from "../src/lib/dedup.ts";
 import {
@@ -42,6 +42,7 @@ phase("presets follow the model's calibration");
   eq(preset("frames", "resnet50").minCos, 0.93, "ResNet50: 0.93");
   eq(preset("frames", "dinov2").minCos, 0.90, "DINOv2: 0.90");
   eq(preset("loose", "dinov2").minCos, 0.85, "DINOv2 loose: 0.85");
+  eq(preset("frames", "thorough").minCos, 0.90, "Thorough shows DINOv2's similarity: 0.90");
   eq(preset("frames", "none").similar, false, "hashes only: no look-alike level");
 }
 
@@ -135,6 +136,11 @@ phase("time estimates read like times");
   check(warm < 30, "the same scan cached: seconds", warm);
   check(estimateSeconds(14725, "dinov2", true, { hashes: true, model: false, align: false }) > cold,
     "a new model plus alignment takes longer than a first ResNet50 scan");
+  const thorough = estimateSeconds(14725, "thorough", false, { hashes: true, model: false, align: false });
+  check(thorough > estimateSeconds(14725, "dinov2", true, { hashes: true, model: false, align: false }),
+    "a first Thorough scan takes longer still, and aligns without being asked", thorough);
+  check(estimateSeconds(14725, "thorough", false, { hashes: true, model: true, align: true }) < 60,
+    "a Thorough rescan with everything cached: under a minute");
   eq(durationText(5, false), "under 10 s", "seconds");
   eq(durationText(43, false), "about 45 s", "rounded seconds");
   eq(durationText(292, false), "about 5 min", "minutes");
@@ -302,6 +308,45 @@ try {
     }
   }
 
+  phase("the pixel aligner: a mirrored, cropped, brightened copy lines up; another photo and another moment do not (needs OpenCV)");
+  {
+    const dir = path.join(root, "align");
+    await fs.mkdir(dir, { recursive: true });
+    const script = [
+      "import json, random, sys", "import numpy as np", "from PIL import Image, ImageDraw, ImageEnhance, ImageOps",
+      "sys.path.insert(0, sys.argv[2])", "import dedup_scan", "d = sys.argv[1]",
+      "def scene(seed, w=640, h=480):",
+      "    r = random.Random(seed); im = Image.new('RGB', (w, h), (120, 130, 140)); dr = ImageDraw.Draw(im)",
+      "    for _ in range(160):",
+      "        x, y = r.randrange(w), r.randrange(h); s = r.randrange(8, 60)",
+      "        c = tuple(r.randrange(256) for _ in range(3))",
+      "        (dr.rectangle if r.random() < 0.5 else dr.ellipse)((x, y, x + s, y + r.randrange(8, 60)), fill=c)",
+      "    return im",
+      "a = scene(1); a.save(d + '/a.png')",
+      "c = ImageOps.mirror(a).crop((60, 40, 560, 420)).resize((600, 456))",
+      "ImageEnhance.Brightness(c).enhance(1.3).save(d + '/copy.png')",
+      "scene(2).save(d + '/other.png')",
+      "m = a.copy(); m.paste(scene(3, 200, 200), (220, 140)); m.save(d + '/moved.png')",   // the same place, something else in the middle
+      "al = dedup_scan.Aligner([d + '/a.png', d + '/copy.png', d + '/other.png', d + '/moved.png'])",
+      "print(json.dumps([al(0, 1), al(0, 2), al(0, 3)]))",
+    ].join("\n");
+    let out: string | null = null;
+    for (const cmd of process.platform === "win32" ? ["python", "py"] : ["python3", "python"]) {
+      try {
+        out = execFileSync(cmd, ["-c", "import cv2"]) && execFileSync(cmd, ["-c", script, dir, path.resolve("scripts")]).toString();
+        break;
+      } catch { /* next */ }
+    }
+    if (!out) {
+      console.log("  (skipped: no Python with OpenCV on PATH)");
+    } else {
+      const [copy, other, moved] = JSON.parse(out.trim()) as [boolean, boolean][];
+      eq(copy, [true, true], "the copy is the same photo, found through its mirror image");
+      eq(other[0], false, "another photo is not");
+      eq(moved[0], false, "the same scene with something else in the middle is not");
+    }
+  }
+
   phase("dedupCacheInfo reads which models and alignments are cached");
   {
     const ds = path.join(root, "cached");
@@ -311,6 +356,11 @@ try {
     const c = await dedupCacheInfo(ds);
     eq([c.hashes, c.models.sort(), c.align], [true, ["dinov2", "resnet50"], ["dinov2"]], "hashes, two models, one alignment");
     eq(await dedupCacheInfo(path.join(root, "never")), { hashes: false, models: [], align: [] }, "never scanned: nothing");
+    eq(cachedFor("dinov2", c), { hashes: true, model: true, align: true }, "a Strong scan is cached");
+    eq(cachedFor("thorough", c), { hashes: true, model: false, align: false }, "a Thorough one also needs SSCD's features");
+    await put(path.join(ds, ".labeler_dedup_cache", "dedup-0123abcd-sscd.npz"));
+    await put(path.join(ds, ".labeler_dedup_cache", "dedup-0123abcd-thorough-align.json"));
+    eq(cachedFor("thorough", await dedupCacheInfo(ds)), { hashes: true, model: true, align: true }, "... and its own alignments");
   }
 } finally {
   await fs.rm(root, { recursive: true, force: true });

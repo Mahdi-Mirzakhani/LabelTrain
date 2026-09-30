@@ -635,7 +635,10 @@ input[type=range].native::-webkit-slider-runnable-track{height:4px;border-radius
 .dup-model{display:flex;flex-direction:column;align-items:flex-start;gap:6px;text-align:start;padding:var(--sp-md) var(--sp-lg);border-radius:var(--r-lg);background:var(--surface);box-shadow:inset 0 0 0 1px var(--border);cursor:pointer;color:inherit;font:inherit;transition:box-shadow .12s,background .12s}
 .dup-model:hover{box-shadow:inset 0 0 0 1px var(--border-strong)}
 .dup-model.on{box-shadow:inset 0 0 0 2px var(--primary);background:color-mix(in srgb,var(--primary) 8%,var(--surface))}
-.dup-model.off{opacity:.5;pointer-events:none}
+.dup-model.off,.dup-model.fixed{pointer-events:none}
+.dup-model.off>:not(.dup-hint){opacity:.5}
+.dup-align{grid-column:1/-1}
+.dup-hint{display:inline-flex;align-items:center;gap:6px;color:var(--text);font-weight:500}
 .dup-model-head{display:flex;align-items:center;gap:var(--sp-sm);width:100%;justify-content:space-between}
 .dup-align .dup-model-head{justify-content:flex-start}
 .dup-model-name{font-size:13px;font-weight:600;color:var(--text)}

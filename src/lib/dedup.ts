@@ -44,6 +44,15 @@ export const MODELS: Record<DedupModel, { floor: number; frames: number; loose: 
   none: { floor: 1, frames: 1, loose: 1, min: 0.85 },
   resnet50: { floor: 0.85, frames: 0.93, loose: 0.90, min: 0.85 },
   dinov2: { floor: 0.80, frames: 0.90, loose: 0.85, min: 0.80 },
+  thorough: { floor: 0.80, frames: 0.90, loose: 0.85, min: 0.80 },   // its similarity is DINOv2's
+};
+
+/** Cache entries a model's scan reads: its features, and whose alignment verdicts. */
+export const CACHE_OF: Record<DedupModel, { features: string[]; align: string }> = {
+  none: { features: [], align: "none" },
+  resnet50: { features: ["resnet50"], align: "resnet50" },
+  dinov2: { features: ["dinov2"], align: "dinov2" },
+  thorough: { features: ["dinov2", "sscd"], align: "thorough" },
 };
 
 export type PresetName = "exact" | "copies" | "frames" | "loose";
@@ -249,18 +258,39 @@ export function bytesText(n: number): string {
  */
 export const LABEL_RATE = 1000;
 
+/** What a previous scan left in the cache, as far as a scan with `model` goes. */
+export function cachedFor(model: DedupModel, info: { hashes: boolean; models: string[]; align: string[] } | null) {
+  const c = CACHE_OF[model];
+  return {
+    hashes: !!info?.hashes,
+    model: !!info && c.features.every(f => info.models.includes(f)),
+    align: !!info?.align.includes(c.align),
+  };
+}
+
+/**
+ * Seconds the alignment step takes. Measured on a 6-core i5-9600KF with 4,058
+ * helmet images: ~2.2 neighbour pairs per image at ~50 pairs/s (thorough: ~7.1
+ * per image, SSCD's neighbours and DINOv2's, at ~55/s); cached ~5,000/s.
+ */
+export function alignSeconds(n: number, model: DedupModel, cached: boolean): number {
+  return (n * (model === "thorough" ? 7.1 : 2.2)) / (cached ? 5000 : model === "thorough" ? 55 : 50);
+}
+
 /**
  * A rough time for a scan, before it starts. Measured on a GTX 1660 Ti and a
  * hard disk: a first read ~50 images/s (the disk is the limit; hashes alone
- * ~120/s), a cached one ~2,000/s; alignment ~3 neighbour pairs per image at
- * ~60 pairs/s, cached ~5,000/s; loading the model 5-10 s.
+ * ~120/s; thorough, which describes each image with DINOv2 and four times
+ * over with SSCD, ~8/s), a cached one ~2,000/s; loading the models 5-15 s.
+ * Thorough always aligns.
  */
 export function estimateSeconds(n: number, model: DupMethod, align: boolean,
   cached: { hashes: boolean; model: boolean; align: boolean }): number {
   if (model === "labels") return Math.max(2, Math.round(1 + n / LABEL_RATE));
-  const readRate = cached.hashes && (model === "none" || cached.model) ? 2000 : model === "none" ? 120 : 50;
-  let s = (model === "none" ? 1 : model === "dinov2" ? 10 : 5) + n / readRate + n / 1500;
-  if (align && model !== "none") s += (n * 2.2) / (cached.align ? 5000 : 60);
+  const readRate = cached.hashes && (model === "none" || cached.model) ? 2000
+    : model === "none" ? 120 : model === "thorough" ? 8 : 50;
+  let s = (model === "none" ? 1 : model === "resnet50" ? 5 : model === "dinov2" ? 10 : 15) + n / readRate + n / 1500;
+  if ((align || model === "thorough") && model !== "none") s += alignSeconds(n, model, cached.align);
   return Math.max(2, Math.round(s));
 }
 
